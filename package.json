@@ -1,0 +1,56 @@
+{
+  "name": "g2-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Control all your agents from Even G2 glasses, the R1 ring and your phone.",
+  "scripts": {
+    "hub": "tsx --env-file-if-exists=.env src/hub/server.ts",
+    "node": "tsx --env-file-if-exists=.env src/node/daemon.ts",
+    "glasses": "npm --prefix glasses run dev",
+    "glasses:qr": "npm --prefix glasses run qr",
+    "fake-agent": "tsx --env-file-if-exists=.env scripts/fake-agent.ts",
+    "typecheck": "tsc --noEmit",
+    "agents:test": "node --import tsx --test scripts/agent-hub-test.ts && node --import tsx scripts/codex-test.ts",
+    "phone:mic:test": "node --test scripts/phone-mic-test.mjs",
+    "translate:test": "node --import tsx --test scripts/translate-test.mjs",
+    "kit:test": "node --import tsx --test scripts/kit-test.mjs",
+    "caption:test": "node --import tsx --test scripts/ptt-caption-test.ts",
+    "bocchi:test": "node --import tsx --test scripts/bocchi-test.ts",
+    "lens:preview": "node --import tsx scripts/lens-preview.mjs",
+    "navmap:test": "node --import tsx --test scripts/navmap-test.ts scripts/nav-google-test.ts",
+    "navgoogle:test": "node --import tsx --test scripts/nav-google-test.ts",
+    "nav:full:preview": "node --import tsx scripts/navmap-full-preview.mjs",
+    "messages:test": "node --import tsx --test scripts/messages-test.ts",
+    "studio:test": "node --import tsx --test scripts/studio-test.ts",
+    "google:connect": "tsx --env-file-if-exists=.env scripts/google-connect.ts",
+    "worker:pair": "tsx --env-file-if-exists=.env scripts/worker-pair.ts",
+    "worker:test": "node --import tsx --test scripts/worker-test.ts",
+    "computer:test": "node --import tsx --test scripts/computer-test.ts",
+    "google:test": "node --import tsx --test scripts/google-test.ts",
+    "miniapp:test": "node --import tsx --test scripts/miniapp-sandbox-test.mjs",
+    "image:test": "node --import tsx --test scripts/image-path-test.mjs",
+    "nav:preview": "node --env-file-if-exists=.env --import tsx scripts/navmap-preview.mjs",
+    "weather:test": "node --import tsx --test scripts/weather-test.ts",
+    "weather:preview": "node --import tsx scripts/wx-preview.mjs",
+    "jarvis-test": "tsx --env-file-if-exists=.env scripts/jarvis-test.ts",
+    "jarvis:native": "tsx --env-file-if-exists=.env native/jarvis.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.300",
+    "astronomy-engine": "^2.1.19",
+    "pinyin-pro": "^3.29.5",
+    "satellite.js": "^7.1.0",
+    "ws": "^8.18.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

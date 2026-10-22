@@ -1,0 +1,25 @@
+{
+  "name": "g2-mario64",
+  "private": true,
+  "type": "module",
+  "description": "Canvas -> G2 glasses streaming prototype (game-agnostic) + phone touch controller. Groundwork for SM64 on Even Realities G2.",
+  "scripts": {
+    "relay": "tsx relay.ts",
+    "dev": "vite --host 0.0.0.0 --port 5174",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test/gray.test.ts",
+    "qr": "evenhub qr --port 5174"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "0.0.16",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}

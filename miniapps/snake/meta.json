@@ -1,0 +1,11 @@
+{
+  "id": "snake",
+  "title": "Snake",
+  "kind": "pixels",
+  "version": 1,
+  "description": "Snake: swipe up turns left, swipe down turns right, tap to pause. Walls wrap.",
+  "updatedAt": 1792119287366,
+  "prompts": [
+    "(hand-written starter)"
+  ]
+}

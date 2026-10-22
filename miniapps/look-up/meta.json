@@ -1,0 +1,23 @@
+{
+  "id": "look-up",
+  "title": "ISS Tracker",
+  "kind": "text",
+  "version": 1,
+  "description": "Look up (web search) what free public JSON API gives the current ISS position, then make a text app that shows the ISS latitude/longitude, refreshed every 30 s with api.fetchJson. Mention in a code comment which API you found.",
+  "updatedAt": 1792628404695,
+  "prompts": [
+    "Look up (web search) what free public JSON API gives the current ISS position, then make a text app that shows the ISS latitude/longitude, refreshed every 30 s with api.fetchJson. Mention in a code comment which API you found."
+  ],
+  "sessionId": "7f9cb9d2-afbb-438a-a699-a3737de0d955",
+  "sessionProvider": "claude",
+  "builds": [
+    {
+      "version": 1,
+      "model": "fast",
+      "modelId": "claude-sonnet-5-5",
+      "ms": 16814,
+      "tries": 1,
+      "at": 1792628404695
+    }
+  ]
+}

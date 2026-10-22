@@ -1,0 +1,10 @@
+{
+  "package_id": "com.myjarvis.downhill",
+  "edition": "202601",
+  "name": "Downhill",
+  "version": "0.1.0",
+  "min_sdk_version": "0.0.16",
+  "entrypoint": "index.html",
+  "permissions": [],
+  "supported_languages": ["en"]
+}

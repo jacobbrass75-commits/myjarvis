@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0b0d0c" />
+<link rel="manifest" href="manifest.webmanifest" />
+<title>Jarvis</title>
+<style>
+  :root {
+    --bg: #f6f7f6; --card: #ffffff; --ink: #121614; --muted: #66706b; --line: #dfe3e0;
+    --accent: #13824c; --accent-ink: #fff; --warn: #b8860b; --bad: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0b0d0c; --card: #141917; --ink: #e3ece7; --muted: #8b9690; --line: #24302a;
+      --accent: #3ccf82; --accent-ink: #04140b; --warn: #e6b450; --bad: #ff6b5b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 -apple-system, system-ui, sans-serif;
+    padding: env(safe-area-inset-top) 16px calc(96px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 6px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--accent); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  .approval { border-color: var(--warn); }
+  .approval .tool { font-weight: 600; }
+  pre { white-space: pre-wrap; word-break: break-word; font: 12.5px/1.45 ui-monospace, Menlo, monospace; margin: 8px 0 0;
+    max-height: 220px; overflow: auto; color: var(--ink); }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  button { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 10px; padding: 10px 14px; min-height: 44px; flex: 1; cursor: pointer; }
+  button.yes { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.no { color: var(--bad); }
+  button:disabled, select:disabled, input:disabled { opacity: .55; cursor: not-allowed; }
+  button.small { flex: 0 0 auto; min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  .agent-head { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .agent-head .name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.running { color: var(--accent); border-color: var(--accent); }
+  .badge.waiting { color: var(--warn); border-color: var(--warn); }
+  .badge.error { color: var(--bad); border-color: var(--bad); }
+  input, select, textarea { font: inherit; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--ink); }
+  textarea { min-height: 70px; resize: vertical; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  .voice { position: fixed; left: 0; right: 0; bottom: 0; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: var(--card); border-top: 1px solid var(--line); display: flex; gap: 8px; }
+  .voice input { flex: 1; }
+  .voice button { flex: 0 0 auto; }
+  #mic.live { background: var(--bad); color: #fff; border-color: var(--bad); }
+  #reply { margin-top: 6px; }
+  #toast { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    padding: 8px 14px; border-radius: 99px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+  #toast.show { opacity: 1; }
+  .empty { color: var(--muted); font-size: 14px; padding: 6px 2px; }
+  .tr { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .tr-hanzi { font-size: 26px; line-height: 1.3; font-weight: 500; }
+  .tr-pinyin { color: var(--accent); font-size: 15px; margin-top: 2px; }
+  .tr-meaning { margin-top: 2px; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 0; white-space: nowrap; }
+  .check input { width: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Jarvis <a href="studio.html" style="font-size:14px;font-weight:600;margin-left:8px">Studio →</a></h1>
+  <span class="muted"><span id="dot" class="dot"></span><span id="conn">offline</span></span>
+</header>
+
+<div id="assistant" class="card" hidden>
+  <div class="muted" id="heard"></div>
+  <div id="reply"></div>
+</div>
+
+<h2>Waiting on you</h2>
+<div id="approvals"></div>
+
+<h2>Agents</h2>
+<div id="agents"></div>
+
+<h2>Copilot</h2>
+<div class="card">
+  <div class="row" style="margin-top:0">
+    <select id="listenMode">
+      <option value="copilot">Copilot (conversation help)</option>
+      <option value="translate">Translate</option>
+      <option value="teleprompter">Teleprompter follow</option>
+    </select>
+    <select id="lang" hidden></select>
+  </div>
+  <div class="row" id="zhOpts" hidden style="align-items:center">
+    <select id="pinyinTones" aria-label="Pinyin tones">
+      <option value="marks">Pinyin: tone marks (nǐ hǎo)</option>
+      <option value="numbers">Pinyin: numbers (ni3 hao3)</option>
+    </select>
+    <label class="check"><input type="checkbox" id="glassesHanzi" checked /> Hanzi on glasses</label>
+  </div>
+  <div class="row">
+    <button class="yes" id="listenPhone">Listen with phone mic</button>
+    <button id="askNow">Help me now</button>
+  </div>
+  <div class="muted" id="listenStatus" style="margin-top:8px">Not listening. Open Copilot on the glasses, or use the phone mic.</div>
+  <div id="cards"></div>
+  <div class="muted" style="margin-top:10px">Live transcript</div>
+  <pre id="transcript" style="max-height:160px"></pre>
+  <div id="translations"></div>
+</div>
+
+<h2>Location</h2>
+<div class="card">
+  <div class="muted">Navigation and "near me" questions use your phone's location.</div>
+  <div class="row"><button id="screenOff">Glasses screen off</button><button id="screenOn">Screen on</button></div>
+  <div class="row" style="align-items:center">
+    <label>Assistant <select id="modelAssistant"><option value="haiku">Haiku (fast)</option><option value="sonnet">Sonnet</option><option value="opus">Opus</option></select></label>
+    <label>Copilot <select id="modelCopilot"><option value="haiku">Haiku (fast)</option><option value="sonnet">Sonnet</option><option value="opus">Opus</option></select></label>
+  </div>
+  <div class="row"><button id="shareLoc">Share location</button><input id="navTo" placeholder="Directions to…" /><button class="small yes" id="navGo">Go</button></div>
+</div>
+
+<h2>Notes</h2>
+<div class="card">
+  <div class="row" style="margin-top:0"><input id="noteText" placeholder="Add a note…" /><button class="small yes" id="noteAdd">Add</button></div>
+  <div id="notes"></div>
+</div>
+
+<h2>Teleprompter</h2>
+<div class="card">
+  <input id="scriptTitle" placeholder="Title" />
+  <textarea id="scriptText" placeholder="Paste your script, talk or speech" style="margin-top:8px;min-height:110px"></textarea>
+  <div class="row"><button class="yes" id="scriptSave">Send to glasses</button></div>
+</div>
+
+<h2>Start an agent</h2>
+<div class="card">
+  <label for="node">Device</label>
+  <select id="node" aria-describedby="agentReady"><option value="">No devices online</option></select>
+  <label for="project">Project</label>
+  <select id="project" aria-describedby="projectPath" disabled><option value="">Choose a device first</option></select>
+  <div id="projectPath" class="muted" style="margin-top:6px"></div>
+  <div id="customFolder" hidden>
+    <label for="cwd">Custom folder on this device</label>
+    <input id="cwd" placeholder="~/projects/my-app" autocapitalize="off" autocorrect="off" spellcheck="false" />
+  </div>
+  <label for="engine">Agent</label>
+  <select id="engine" aria-describedby="agentReady" disabled><option value="claude">Claude Code</option><option value="codex">Codex</option></select>
+  <div id="agentReady" class="muted" role="status" aria-live="polite" style="margin-top:8px">Connect to the hub to start an agent.</div>
+  <label for="prompt">Task</label>
+  <textarea id="prompt" placeholder="Fix the failing tests and open a PR"></textarea>
+  <div class="row"><button class="yes" id="start" aria-describedby="agentReady" disabled>Start</button></div>
+</div>
+
+<h2>Devices &amp; apps</h2>
+<div id="devices" class="card muted"></div>
+<div class="card">
+  <div class="row" style="margin-top:0;align-items:center">
+    <div class="muted" style="flex:1">Add another computer (e.g. an always-on home Mac for computer use).</div>
+    <button class="small" id="pairBtn">Pair a computer</button>
+  </div>
+  <div id="pairInfo" role="status" aria-live="polite" hidden></div>
+  <div id="workers"></div>
+</div>
+
+<h2>Google</h2>
+<div class="card">
+  <div class="row" style="margin-top:0;align-items:center">
+    <div id="googleStatus" class="muted" style="flex:1" role="status" aria-live="polite">Google: checking…</div>
+    <button class="small" id="googleBtn" hidden>Connect</button>
+  </div>
+</div>
+
+<form class="voice" id="voiceForm">
+  <button type="button" id="mic" aria-label="Hold to talk">🎙</button>
+  <input id="say" placeholder="Tell your agents…" autocomplete="off" />
+  <button class="yes" type="submit">Send</button>
+</form>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+const qs = new URLSearchParams(location.search);
+if (qs.get("token")) { store.set("hubToken", qs.get("token")); history.replaceState(null, "", location.pathname); }
+const token = store.get("hubToken") || "";
+let ws, state = { agents: [], approvals: [], nodes: [], apps: [], voice: {} };
+const open = new Set();
+const followups = new Map();
+const engineNames = { claude: "Claude Code", codex: "Codex" };
+const launchChoices = new Map();
+const DEFAULT_PROJECT = "__default__", CUSTOM_PROJECT = "__custom__";
+let connected = false, haveState = false, selectedNodeId = "";
+
+function connect() {
+  haveState = false;
+  setConn(false);
+  ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/ws");
+  ws.onopen = () => { ws.send(JSON.stringify({ t: "hello", role: "phone", token })); };
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.t === "welcome") { setConn(true); ws.send(JSON.stringify({ t: "models_get" })); }
+    else if (m.t === "models") { $("modelAssistant").value = m.assistant; $("modelCopilot").value = m.copilot; }
+    else if (m.t === "state") { state = m.state; haveState = true; render(); }
+    else if (m.t === "voice_reply") showReply(m.heard, m.reply);
+    else if (m.t === "toast" || m.t === "error") {
+      if (String(m.text).startsWith("Listening failed:")) stopPhoneMic(false);
+      toast(m.text);
+    }
+    else jarvisMsg(m);
+  };
+  ws.onclose = () => { stopPhoneMic(false); setConn(false); setTimeout(connect, 2000); };
+}
+const sendHub = (m) => ws && ws.readyState === 1 ? (ws.send(JSON.stringify(m)), true) : (toast("Not connected"), false);
+const setConn = (on) => {
+  connected = on;
+  $("dot").className = "dot" + (on ? " on" : "");
+  $("conn").textContent = on ? "connected" : "offline";
+  $("listenPhone").disabled = !on;
+  renderLaunch();
+  renderAgents();
+};
+
+let toastT;
+function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 2800); }
+function showReply(heard, reply) { $("assistant").hidden = false; $("heard").textContent = heard ? `“${heard}”` : ""; $("reply").textContent = reply; }
+
+const nodeName = (id) => (state.nodes.find((n) => n.id === id) || {}).name || id;
+const engineLabel = (agent) => agent.kind === "codex" ? "Codex" : agent.kind === "computer" ? "Computer use" : "Claude Code";
+const nodeAvailable = (id) => connected && haveState && state.nodes.some((n) => n.id === id && n.online);
+
+// Only replace options when their contents change: live state updates should not close a picker
+// or erase the project, engine, custom folder or task the user is working on.
+function selectOptions(select, options, value) {
+  const html = options.map((o) => `<option value="${esc(o.value)}"${o.disabled ? " disabled" : ""}>${esc(o.label)}</option>`).join("");
+  if (select.dataset.options !== html) { select.innerHTML = html; select.dataset.options = html; }
+  if (select.value !== value) select.value = value;
+}
+
+function launchChoice(node) {
+  if (!launchChoices.has(node.id)) launchChoices.set(node.id, {
+    project: DEFAULT_PROJECT, customCwd: "", engine: node.engines?.[0] || "claude",
+  });
+  return launchChoices.get(node.id);
+}
+
+function launchSelection() {
+  const node = state.nodes.find((n) => n.id === selectedNodeId);
+  const choice = node && launchChoice(node);
+  const project = node?.projects?.find((p) => p.path === choice?.project);
+  const cwd = !choice || choice.project === DEFAULT_PROJECT ? undefined
+    : choice.project === CUSTOM_PROJECT ? choice.customCwd.trim() : project?.path;
+  const folderReady = !!choice && (choice.project === DEFAULT_PROJECT || !!cwd);
+  return { node, choice, cwd, ready: !!node && nodeAvailable(node.id) && node.engines?.includes(choice.engine) && folderReady };
+}
+
+function renderLaunch() {
+  if (!selectedNodeId && state.nodes.length) selectedNodeId = (state.nodes.find((n) => n.online) || state.nodes[0]).id;
+  const nodes = state.nodes.map((n) => ({ value: n.id, label: n.name + (n.online ? "" : " (offline)") }));
+  if (selectedNodeId && !state.nodes.some((n) => n.id === selectedNodeId)) nodes.push({ value: selectedNodeId, label: "Selected device unavailable", disabled: true });
+  selectOptions($("node"), nodes.length ? nodes : [{ value: "", label: "No devices online" }], selectedNodeId);
+  $("node").disabled = !state.nodes.length;
+
+  const { node, choice, ready } = launchSelection();
+  const available = !!node && nodeAvailable(node.id);
+  const projects = [{ value: DEFAULT_PROJECT, label: "Device default folder" },
+    ...(node?.projects || []).map((p) => ({ value: p.path, label: p.name })),
+    { value: CUSTOM_PROJECT, label: "Custom folder…" }];
+  if (choice && !projects.some((p) => p.value === choice.project)) projects.push({ value: choice.project, label: "Previously selected project (unavailable)", disabled: true });
+  selectOptions($("project"), projects, choice?.project || DEFAULT_PROJECT);
+  $("project").disabled = !available;
+  $("customFolder").hidden = choice?.project !== CUSTOM_PROJECT;
+  if ($("cwd").value !== (choice?.customCwd || "")) $("cwd").value = choice?.customCwd || "";
+  $("cwd").disabled = !available;
+  $("projectPath").textContent = !node ? "Projects appear when a device connects."
+    : choice.project === CUSTOM_PROJECT ? "Enter a folder path on " + node.name + "."
+    : choice.project === DEFAULT_PROJECT ? node.defaultCwd || "Uses the device’s default folder."
+    : node.projects?.find((p) => p.path === choice.project)?.path || "Choose an available project or enter a custom folder.";
+
+  selectOptions($("engine"), Object.entries(engineNames).map(([engine, name]) => ({
+    value: engine, label: name + (node?.engines?.includes(engine) ? " — ready" : " — not ready"),
+    disabled: !available || !node?.engines?.includes(engine),
+  })), choice?.engine || "claude");
+  $("engine").disabled = !available || !node.engines?.length;
+
+  const issues = Object.entries(node?.engineIssues || {}).filter(([, issue]) => issue)
+    .map(([engine, issue]) => `${engineNames[engine] || engine}: ${issue}`).join(" · ");
+  let message = !connected ? "Hub offline. Your choices are saved; reconnect to start an agent."
+    : !haveState ? "Waiting for the device list…"
+    : !node ? "Connect a device daemon to start an agent."
+    : !node.online ? node.name + " is offline. Start its device daemon or choose another device."
+    : !node.engines?.length ? "No coding agents are ready on " + node.name + "."
+    : !node.engines.includes(choice.engine) ? `${engineNames[choice.engine]} is not ready on ${node.name}. Choose a ready agent.`
+    : choice.project === CUSTOM_PROJECT && !choice.customCwd.trim() ? "Enter the custom folder before starting."
+    : !ready ? "Choose an available project before starting."
+    : `${engineNames[choice.engine]} is ready on ${node.name}.`;
+  $("agentReady").textContent = message + (issues ? " " + issues : "") + (available && node.permissionMode === "unrestricted" ? " Unrestricted agent access is enabled on this computer." : "");
+  $("start").disabled = !ready;
+}
+
+function renderAgents() {
+  const editing = document.activeElement?.dataset.msg;
+  const selection = editing ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+  $("agents").innerHTML = state.agents.length ? state.agents.map((a, i) => `
+    <div class="card">
+      <div class="agent-head" data-toggle="${esc(a.id)}" role="button" tabindex="0" aria-expanded="${open.has(a.id)}" aria-label="${esc(engineLabel(a))}: ${esc(a.name)}">
+        <span class="muted">${i + 1}</span>
+        <span class="name">${esc(a.name)}</span>
+        <span class="badge ${esc(a.status)}">${esc(a.status)}</span>
+      </div>
+      <div class="muted">${esc(engineLabel(a))}${a.kind === "claude-code" ? " · terminal session" : ""} · ${esc(nodeName(a.nodeId))} · ${esc(a.cwd)}${nodeAvailable(a.nodeId) ? "" : " · offline"}</div>
+      ${open.has(a.id) ? `
+        <pre>${esc(a.lastText || "(no output yet)")}</pre>
+        ${a.kind !== "claude-code" ? `<div class="row">
+          <input data-msg="${esc(a.id)}" value="${esc(followups.get(a.id) || "")}" placeholder="Follow-up…" aria-label="Follow-up for ${esc(a.name)}"${nodeAvailable(a.nodeId) ? "" : " disabled"} />
+          <button class="small" data-send="${esc(a.id)}"${nodeAvailable(a.nodeId) ? "" : " disabled"}>Send</button>
+          <button class="small no" data-stop="${esc(a.id)}" aria-label="Stop ${esc(a.name)}"${nodeAvailable(a.nodeId) ? "" : " disabled"}>Stop</button>
+        </div>` : ""}` : ""}
+    </div>`).join("") : `<div class="empty">No agents yet. Choose a device, project and agent below, or hold to talk on your glasses.</div>`;
+  if (editing) {
+    const input = [...$("agents").querySelectorAll("[data-msg]")].find((el) => el.dataset.msg === editing);
+    if (input && !input.disabled) { input.focus({ preventScroll: true }); input.setSelectionRange(...selection); }
+  }
+}
+
+// Computer use on a device: ready (and how approvals work), or why it isn't.
+function computerLine(n) {
+  if (n.capabilities?.includes("computer")) return ` · computer use ready (${n.computerApproval === "task" ? "approve once per task" : "approve every step"})`;
+  return n.capabilityIssues?.computer ? ` · computer use: ${esc(n.capabilityIssues.computer)}` : "";
+}
+
+function renderWorkers() {
+  const list = state.workers || [];
+  $("workers").innerHTML = list.length ? list.map((w) => `<div class="row" style="align-items:center">
+      <div style="flex:1"><span class="dot ${w.online ? "on" : ""}"></span>${esc(w.name)} <span class="muted">· ${w.online ? "online" : "offline"}${w.os ? " · " + esc(w.os) : ""} · paired ${esc(new Date(w.createdAt).toLocaleDateString())}${!w.online && w.lastSeen ? " · last seen " + esc(new Date(w.lastSeen).toLocaleString()) : ""}</span></div>
+      <button class="small no" data-revoke="${esc(w.id)}" data-name="${esc(w.name)}">Revoke</button>
+    </div>`).join("") : `<div class="muted" style="margin-top:8px">No paired computers.</div>`;
+}
+
+function render() {
+
+  $("approvals").innerHTML = state.approvals.length ? state.approvals.map((a) => `
+    <div class="card approval">
+      <div><span class="tool">${esc(a.tool)}</span> <span class="muted">· ${esc(a.agentName)}${a.nodeId ? ` @ ${esc(nodeName(a.nodeId))}` : ""}</span></div>
+      <pre>${esc(a.summary)}</pre>
+      <div class="row">
+        <button class="no" data-approve="${a.id}" data-d="deny">Deny</button>
+        <button class="yes" data-approve="${a.id}" data-d="allow">Approve</button>
+      </div>
+    </div>`).join("") : `<div class="empty">Nothing needs approval.</div>`;
+
+  renderAgents();
+  renderLaunch();
+  renderWorkers();
+
+  $("devices").innerHTML = (state.nodes.map((n) => `<div><span class="dot ${nodeAvailable(n.id) ? "on" : ""}"></span>${esc(n.name)} <span>· ${n.os ? esc(n.os) + " · " : ""}${esc(n.defaultCwd)} · ${!nodeAvailable(n.id) ? "offline" : n.engines?.length ? esc(n.engines.map((e) => engineNames[e] || e).join(", ")) + " ready" : "No coding agents ready"}${computerLine(n)}${n.workerId ? " · paired" : ""}</span></div>`).join("") || "No devices.") +
+    `<div style="margin-top:8px">Apps: ${state.apps.map((a) => esc(a.name)).join(", ") || "none — add them to apps.json"}</div>`;
+
+  if (state.voice?.lastReply && $("assistant").hidden) showReply(state.voice.lastHeard, state.voice.lastReply);
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-approve],[data-toggle],[data-send],[data-stop]");
+  if (!t) return;
+  if (t.dataset.approve) sendHub({ t: "approve", id: t.dataset.approve, decision: t.dataset.d });
+  else if (t.dataset.toggle) { open.has(t.dataset.toggle) ? open.delete(t.dataset.toggle) : open.add(t.dataset.toggle); render(); }
+  else if (t.dataset.send) {
+    const input = document.querySelector(`[data-msg="${t.dataset.send}"]`);
+    if (input.value.trim() && sendHub({ t: "agent_send", agentId: t.dataset.send, text: input.value.trim() })) { input.value = ""; followups.delete(t.dataset.send); }
+  } else if (t.dataset.stop) sendHub({ t: "agent_stop", agentId: t.dataset.stop });
+});
+
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-toggle]")) { e.preventDefault(); e.target.click(); }
+});
+document.addEventListener("input", (e) => { if (e.target.dataset.msg) followups.set(e.target.dataset.msg, e.target.value); });
+
+$("node").onchange = () => { selectedNodeId = $("node").value; renderLaunch(); };
+$("project").onchange = () => {
+  const node = state.nodes.find((n) => n.id === selectedNodeId);
+  if (node) launchChoice(node).project = $("project").value;
+  renderLaunch();
+};
+$("engine").onchange = () => {
+  const node = state.nodes.find((n) => n.id === selectedNodeId);
+  if (node) launchChoice(node).engine = $("engine").value;
+  renderLaunch();
+};
+$("cwd").oninput = () => {
+  const node = state.nodes.find((n) => n.id === selectedNodeId);
+  if (node) launchChoice(node).customCwd = $("cwd").value;
+  renderLaunch();
+};
+
+$("start").onclick = () => {
+  const selected = launchSelection();
+  if (!selected.ready) return toast("Choose an online device, available project and ready agent first");
+  const prompt = $("prompt").value.trim();
+  if (!prompt) return toast("Describe the task first");
+  if (sendHub({ t: "agent_start", nodeId: selected.node.id, cwd: selected.cwd, prompt, engine: selected.choice.engine })) { $("prompt").value = ""; toast("Starting…"); }
+};
+
+$("voiceForm").onsubmit = (e) => {
+  e.preventDefault();
+  const text = $("say").value.trim();
+  if (text && sendHub({ t: "voice_text", text })) { $("say").value = ""; showReply(text, "…"); }
+};
+
+// Phone-side voice uses the browser's own speech recognition (Safari / Chrome), no hub STT needed.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) $("mic").hidden = true;
+else {
+  let rec = null;
+  const startRec = (e) => {
+    e.preventDefault();
+    if (rec) return;
+    rec = new SR(); rec.lang = navigator.language || "en-US"; rec.interimResults = true;
+    let finalText = "";
+    rec.onresult = (ev) => { finalText = [...ev.results].map((r) => r[0].transcript).join(" "); $("say").value = finalText; };
+    rec.onend = () => { $("mic").classList.remove("live"); rec = null; if (finalText.trim() && sendHub({ t: "voice_text", text: finalText.trim() })) { showReply(finalText, "…"); $("say").value = ""; } };
+    rec.onerror = (ev) => toast("Mic: " + ev.error);
+    rec.start(); $("mic").classList.add("live");
+  };
+  const stopRec = () => rec && rec.stop();
+  $("mic").addEventListener("pointerdown", startRec);
+  $("mic").addEventListener("pointerup", stopRec);
+  $("mic").addEventListener("pointerleave", stopRec);
+}
+
+// ---------------- Jarvis: copilot, translation, notes, teleprompter ----------------
+
+const LANGS = [["es-ES","Spanish"],["fr-FR","French"],["de-DE","German"],["it-IT","Italian"],["pt-BR","Portuguese"],["zh-CN","Chinese"],["ja-JP","Japanese"],["ko-KR","Korean"],["ar-SA","Arabic"],["ru-RU","Russian"],["hi-IN","Hindi"]];
+$("lang").innerHTML = LANGS.map(([c, n]) => `<option value="${c}">${n}</option>`).join("");
+// Chinese: how pinyin and hanzi show (this session and the next; the hub's env sets the defaults).
+let zhSession = false;
+const showZhOpts = () => { $("zhOpts").hidden = !zhSession && !($("listenMode").value === "translate" && $("lang").value.startsWith("zh")); };
+const translateOpts = () => ({ pinyin: $("pinyinTones").value, glassesHanzi: !!$("glassesHanzi").checked });
+$("listenMode").onchange = () => { $("lang").hidden = $("listenMode").value !== "translate"; showZhOpts(); };
+$("lang").onchange = showZhOpts;
+$("pinyinTones").onchange = $("glassesHanzi").onchange = () => sendHub({ t: "translate_options", options: translateOpts() });
+const KIND = { fact: "Fact", ask: "Ask", say: "Say", term: "Term", check: "Check", next: "Next", answer: "Answer" };
+let transcript = [], partialLine = "", translations = [], notes = [], listeningPurpose = null;
+
+function jarvisMsg(m) {
+  if (m.t === "transcript") {
+    if (m.line.final) { transcript.push((m.line.who ? (m.line.who === "me" ? "Me: " : "Them: ") : "") + m.line.text); transcript = transcript.slice(-40); partialLine = ""; }
+    else partialLine = m.line.text;
+    $("transcript").textContent = transcript.join("\n") + (partialLine ? "\n… " + partialLine : "");
+    $("transcript").scrollTop = 1e9;
+  } else if (m.t === "copilot") {
+    const u = m.update;
+    $("cards").innerHTML = `<div style="margin-top:10px"><b>${esc(u.topic || "")}</b> <span class="muted">${esc(u.summary || "")}</span></div>` +
+      (u.direction ? `<div class="muted">→ ${esc(u.direction)}</div>` : "") +
+      u.cards.map((c) => `<div class="card" style="margin:8px 0 0"><span class="badge">${esc(KIND[c.kind] || c.kind)}</span> ${esc(c.text)}${c.more ? `<div class="muted" style="margin-top:4px">${esc(c.more)}</div>` : ""}</div>`).join("");
+  } else if (m.t === "translation") {
+    translations.unshift(m); translations = translations.slice(0, 20);
+    if (m.hanzi && !zhSession) { zhSession = true; showZhOpts(); }
+    // Chinese: hanzi large, pinyin under it, the meaning under that (the non-Chinese side: theirs
+    // translated, or what you said). Translated into your language = they said it (as on the glasses).
+    const mine = (navigator.language || "en").slice(0, 2);
+    const meaning = (t) => (t.from === "zh" ? [t.text] : [t.original, t.source]).find((s) => s && !/\p{Script=Han}/u.test(s)) || "";
+    $("translations").innerHTML = translations.map((t) => t.hanzi
+      ? `<div class="tr"><div class="muted">${t.to === mine ? "They said" : "Say this"}</div><div class="tr-hanzi" lang="zh">${esc(t.hanzi)}</div>` +
+        `<div class="tr-pinyin">${esc(t.pinyin)}</div><div class="tr-meaning">${esc(meaning(t))}</div></div>`
+      : `<div style="margin-top:8px"><b>${esc(t.text)}</b><div class="muted">${esc(t.source)}</div></div>`).join("");
+  } else if (m.t === "translate_options") {
+    $("pinyinTones").value = m.options.pinyin;
+    $("glassesHanzi").checked = m.options.glassesHanzi;
+  } else if (m.t === "notes") {
+    notes = m.notes;
+    $("notes").innerHTML = notes.map((n) => `<div class="row" style="align-items:center"><div style="flex:1">${esc(n.text)}<div class="muted">${new Date(n.at).toLocaleString()}</div></div><button class="small no" data-delnote="${n.id}">✕</button></div>`).join("") || `<div class="empty">No notes yet.</div>`;
+  } else if (m.t === "script") {
+    if (m.script && !$("scriptText").value) { $("scriptTitle").value = m.script.title; $("scriptText").value = m.script.text; }
+  } else if (m.t === "listening") {
+    listeningPurpose = m.purpose;
+    $("listenStatus").textContent = m.purpose ? `Listening for ${m.purpose}${m.engine ? ` · ${m.engine}` : ""}` : "Not listening.";
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const d = e.target.closest("[data-delnote]");
+  if (d) sendHub({ t: "note_delete", id: d.dataset.delnote });
+});
+$("noteAdd").onclick = () => { const t = $("noteText").value.trim(); if (t && sendHub({ t: "note_add", text: t })) $("noteText").value = ""; };
+$("scriptSave").onclick = () => {
+  const text = $("scriptText").value.trim();
+  if (text && sendHub({ t: "script_set", script: { title: $("scriptTitle").value.trim() || "Script", text } })) toast("Sent to glasses");
+};
+$("askNow").onclick = () => sendHub({ t: "copilot_ask" });
+
+let geoWatch = null;
+$("modelAssistant").onchange = (e) => sendHub({ t: "models_set", role: "assistant", model: e.target.value });
+$("modelCopilot").onchange = (e) => sendHub({ t: "models_set", role: "copilot", model: e.target.value });
+$("screenOff").onclick = () => sendHub({ t: "screen_set", on: false });
+$("screenOn").onclick = () => sendHub({ t: "screen_set", on: true });
+$("shareLoc").onclick = () => {
+  if (geoWatch !== null) { navigator.geolocation.clearWatch(geoWatch); geoWatch = null; $("shareLoc").textContent = "Share location"; return; }
+  geoWatch = navigator.geolocation.watchPosition(
+    (p) => sendHub({ t: "location", lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy }),
+    (e) => toast("Location: " + e.message),
+    { enableHighAccuracy: true, maximumAge: 2000 });
+  $("shareLoc").textContent = "Stop sharing";
+};
+$("navGo").onclick = () => { const q = $("navTo").value.trim(); if (q) sendHub({ t: "nav_start", query: q, profile: "walk" }); };
+
+// Native iOS uses AVAudioEngine over this trusted hub bridge; HTTPS browsers retain getUserMedia.
+// Capture starts only from a real button tap. Permission completion cannot revive a stopped session.
+let phoneMic = null, phoneMicStarting = false, phoneMicAttempt = 0, pendingMicKind = null, pendingMicSession = null;
+
+function stopPhoneMic(notifyHub = true, stopNative = true) {
+  const active = phoneMic, wasStarting = phoneMicStarting, pending = pendingMicKind, pendingSession = pendingMicSession;
+  phoneMicAttempt += 1;
+  phoneMic = null; phoneMicStarting = false; pendingMicKind = null; pendingMicSession = null;
+  $("listenPhone").textContent = "Listen with phone mic";
+  $("listenPhone").disabled = !connected;
+  if (active?.kind === "browser") active.stop();
+  if (stopNative && (active?.kind === "native" || pending === "native")) {
+    Promise.resolve(window.jarvisPhoneMic?.stop(active?.session || pendingSession)).catch(() => {});
+  }
+  if (notifyHub && (active || wasStarting) && ws?.readyState === 1) sendHub({ t: "listen_stop" });
+}
+
+window.addEventListener("jarvis-phone-mic-pcm", (event) => {
+  const detail = event.detail;
+  if (phoneMic?.kind !== "native" || detail?.session !== phoneMic.session || !connected || ws?.readyState !== 1) return;
+  try {
+    const decoded = atob(detail.pcm), bytes = Uint8Array.from(decoded, (c) => c.charCodeAt(0));
+    if (bytes.length && bytes.length % 2 === 0) ws.send(bytes.buffer);
+  } catch { stopPhoneMic(); toast("Microphone audio could not be read."); }
+});
+window.addEventListener("jarvis-phone-mic-stopped", (event) => {
+  if ((phoneMic?.kind === "native" && event.detail?.session === phoneMic.session) ||
+      (phoneMicStarting && pendingMicKind === "native" && event.detail?.session === pendingMicSession)) stopPhoneMic(true, false);
+});
+window.addEventListener("pagehide", () => stopPhoneMic());
+document.addEventListener("visibilitychange", () => { if (document.hidden) stopPhoneMic(); });
+
+$("listenPhone").onclick = async (event) => {
+  if (!event?.isTrusted) return;
+  if (phoneMic || phoneMicStarting) { stopPhoneMic(); return; }
+  if (!connected || ws?.readyState !== 1) { toast("Connect to the hub before starting the microphone."); return; }
+  const attempt = ++phoneMicAttempt, socket = ws;
+  const purpose = $("listenMode").value;
+  const current = () => attempt === phoneMicAttempt && connected && ws === socket && socket.readyState === 1 && !document.hidden;
+  phoneMicStarting = true;
+  pendingMicKind = window.jarvisPhoneMic ? "native" : "browser";
+  $("listenPhone").textContent = "Cancel microphone";
+  const begin = () => sendHub({ t: "listen_start", purpose, sampleRate: 16000, lang: purpose === "translate" ? $("lang").value : (navigator.language || "en-US"), target: (navigator.language || "en").slice(0, 2), ...(purpose === "translate" && { translate: translateOpts() }) });
+  let stream = null, ctx = null, src = null, proc = null;
+  try {
+    if (window.jarvisPhoneMic) {
+      pendingMicSession = `${Date.now().toString(36)}-${attempt}-${Math.random().toString(36).slice(2)}`;
+      const result = await window.jarvisPhoneMic.start(pendingMicSession);
+      if (!current()) { if (result?.ok) await window.jarvisPhoneMic.stop(result.session); return; }
+      if (!result?.ok || !result.session || result.sampleRate !== 16000) throw new Error(result?.error || "The phone microphone could not start.");
+      phoneMic = { kind: "native", session: result.session };
+      if (!begin()) { stopPhoneMic(false); return; }
+    } else {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Use the Jarvis iPhone app or open this hub over HTTPS for phone microphone access.");
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      if (!current()) { stream.getTracks().forEach((t) => t.stop()); return; }
+      ctx = new AudioContext();
+      src = ctx.createMediaStreamSource(stream);
+      proc = ctx.createScriptProcessor(4096, 1, 1);
+      const ratio = ctx.sampleRate / 16000;
+      phoneMic = { kind: "browser", stop: () => { proc.disconnect(); src.disconnect(); stream.getTracks().forEach((t) => t.stop()); ctx.close(); } };
+      proc.onaudioprocess = (ev) => {
+        if (!current() || phoneMic?.kind !== "browser") return;
+        const input = ev.inputBuffer.getChannelData(0), out = new Int16Array(Math.floor(input.length / ratio));
+        for (let i = 0; i < out.length; i++) out[i] = Math.max(-1, Math.min(1, input[Math.floor(i * ratio)])) * 0x7fff;
+        socket.send(out.buffer);
+      };
+      if (!begin()) { stopPhoneMic(false); return; }
+      src.connect(proc); proc.connect(ctx.destination);
+    }
+    phoneMicStarting = false; pendingMicKind = null; pendingMicSession = null;
+    $("listenPhone").textContent = "Stop listening";
+  } catch (err) {
+    if (attempt !== phoneMicAttempt) return;
+    if (!phoneMic && stream) { stream.getTracks().forEach((t) => t.stop()); ctx?.close(); }
+    stopPhoneMic();
+    toast("Mic: " + err.message);
+  }
+};
+
+// ---- Google account (Calendar + Gmail). Sign-in finishes in the Mac's browser (Google redirects to 127.0.0.1). ----
+async function googleApi(path, method = "GET") {
+  const r = await fetch("/api/google/" + path, { method, headers: { "x-hub-token": token } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+  return j;
+}
+let googleWait;
+async function googleRefresh() {
+  try {
+    const s = await googleApi("status");
+    $("googleStatus").textContent = !s.configured ? "Google: not set up (OAuth client in .env)"
+      : s.connected ? `Google: connected as ${s.email || "your account"}${s.error ? " · " + s.error : ""}`
+      : s.connecting ? "Google: finish signing in on the Mac…" : "Google: not connected";
+    const b = $("googleBtn");
+    b.hidden = !s.configured;
+    b.textContent = s.connected ? "Disconnect" : "Connect";
+    b.dataset.connected = s.connected ? "1" : "";
+    return s;
+  } catch (err) { $("googleStatus").textContent = "Google: " + err.message; }
+}
+$("googleBtn").onclick = async () => {
+  try {
+    if ($("googleBtn").dataset.connected) {
+      if (!window.confirm("Disconnect Google? Calendar and Gmail stop working until you connect again.")) return;
+      await googleApi("disconnect", "POST");
+    } else {
+      await googleApi("connect", "POST");
+      toast("Google sign-in opened in your Mac's browser");
+      clearInterval(googleWait);
+      let n = 0;
+      googleWait = setInterval(async () => { const s = await googleRefresh(); if (s?.connected || !s?.connecting || ++n > 100) clearInterval(googleWait); }, 3000);
+    }
+  } catch (err) { toast("Google: " + err.message); }
+  googleRefresh();
+};
+
+// ---- Pairing other computers (src/hub/workers.ts): a one-time code, then that computer has its own token. ----
+async function workersApi(path, method = "GET") {
+  const r = await fetch("/api/workers" + path, { method, headers: { "x-hub-token": token } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "HTTP " + r.status);
+  return j;
+}
+let pairTimer;
+$("pairBtn").onclick = async () => {
+  try {
+    const j = await workersApi("/code", "POST");
+    const info = $("pairInfo");
+    info.hidden = false;
+    const draw = () => {
+      const left = Math.max(0, Math.round((j.expiresAt - Date.now()) / 1000));
+      info.innerHTML = left ? `<div style="margin-top:8px">Code <b style="font-size:20px;letter-spacing:2px">${esc(j.code)}</b> <span class="muted">· one use · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left</span></div>
+        <div class="muted" style="margin-top:6px">On the other Mac, in its g2-orchestrator folder (add --computer for computer use):</div>
+        <pre>${esc(j.command)}</pre>` : `<div class="muted" style="margin-top:8px">That code expired. Make a new one.</div>`;
+      if (!left) clearInterval(pairTimer);
+    };
+    clearInterval(pairTimer);
+    draw();
+    pairTimer = setInterval(draw, 1000);
+  } catch (err) { toast("Pairing: " + err.message); }
+};
+document.addEventListener("click", async (e) => {
+  const t = e.target.closest("[data-revoke]");
+  if (!t) return;
+  if (!window.confirm(`Revoke ${t.dataset.name}? It disconnects now and needs a new pairing code to come back.`)) return;
+  try { await workersApi("/" + encodeURIComponent(t.dataset.revoke) + "/revoke", "POST"); toast("Revoked " + t.dataset.name); }
+  catch (err) { toast("Revoke: " + err.message); }
+});
+
+if (!token) toast("Open this page once with ?token=YOUR_HUB_TOKEN");
+connect();
+if (token) googleRefresh();
+</script>
+</body>
+</html>

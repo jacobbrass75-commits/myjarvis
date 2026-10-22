@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>N64 Pad</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --btn: #1c222c;
+        --btn-on: #3a4658;
+        --a: #2e62c9;
+        --b: #2f9b55;
+        --c: #c9a12e;
+        --text: #d8dee6;
+        --muted: #7c8696;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); touch-action: none; overscroll-behavior: none; }
+      #pad { position: fixed; inset: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+      #stickZone { position: absolute; left: 0; top: 0; bottom: 0; width: 46%; }
+      #base, #knob { position: absolute; border-radius: 50%; pointer-events: none; transform: translate(-50%, -50%); }
+      #base { width: 150px; height: 150px; border: 2px solid #2c3442; background: radial-gradient(#141920, #0f1318); }
+      #knob { width: 64px; height: 64px; background: #3a4658; border: 2px solid #56657d; }
+      .btn {
+        position: absolute; display: flex; align-items: center; justify-content: center; border-radius: 50%;
+        background: var(--btn); border: 2px solid #2c3442; font-weight: 700; font-size: 20px; color: var(--text);
+      }
+      .btn.on { background: var(--btn-on); transform: scale(0.94); }
+      .btn.pill { border-radius: 14px; font-size: 14px; }
+      #A { width: 92px; height: 92px; right: 4%; bottom: 14%; background: var(--a); }
+      #A.on { background: #5a86e0; }
+      #B { width: 74px; height: 74px; right: calc(4% + 104px); bottom: calc(14% + 40px); background: var(--b); }
+      #B.on { background: #4fc077; }
+      #Z { width: 96px; height: 52px; left: 47%; bottom: 8%; }
+      #R { width: 96px; height: 44px; right: 4%; top: 6%; }
+      #L { width: 70px; height: 44px; left: 4%; top: 6%; z-index: 2; }
+      #START { width: 72px; height: 40px; left: calc(50% - 36px); top: 6%; color: #e05858; }
+      .c { width: 52px; height: 52px; background: #2a2614; border-color: #5a4d1f; color: var(--c); font-size: 16px; }
+      .c.on { background: #5a4d1f; }
+      #CU { right: calc(4% + 70px); top: 22%; }
+      #CL { right: calc(4% + 126px); top: calc(22% + 44px); }
+      #CR { right: calc(4% + 14px); top: calc(22% + 44px); }
+      #CD { right: calc(4% + 70px); top: calc(22% + 88px); }
+      #hud { position: absolute; left: 50%; top: 16%; transform: translateX(-50%); font-size: 12px; color: var(--muted); text-align: center; pointer-events: none; font-variant-numeric: tabular-nums; }
+      /* Upright phone (the Even App and many people keep rotation locked). */
+      @media (orientation: portrait) {
+        #stickZone { top: 42%; width: 50%; }
+        #L { top: 4%; left: 4%; }
+        #START { top: 4%; }
+        #R { top: 4%; right: 4%; }
+        #hud { top: 12%; }
+        #Z { left: 6%; top: 28%; bottom: auto; width: 110px; height: 56px; }
+        #CU { right: calc(4% + 70px); top: 20%; }
+        #CL { right: calc(4% + 126px); top: calc(20% + 50px); }
+        #CR { right: calc(4% + 14px); top: calc(20% + 50px); }
+        #CD { right: calc(4% + 70px); top: calc(20% + 100px); }
+        #A { right: 5%; bottom: 12%; width: 96px; height: 96px; }
+        #B { right: calc(5% + 34px); bottom: calc(12% + 112px); width: 80px; height: 80px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="pad">
+      <div id="stickZone"></div>
+      <div id="base"></div>
+      <div id="knob"></div>
+      <div class="btn pill" id="L">L</div>
+      <div class="btn pill" id="START">START</div>
+      <div class="btn pill" id="R">R</div>
+      <div class="btn pill" id="Z">Z</div>
+      <div class="btn" id="B">B</div>
+      <div class="btn" id="A">A</div>
+      <div class="btn c" id="CU">▲</div>
+      <div class="btn c" id="CL">◀</div>
+      <div class="btn c" id="CR">▶</div>
+      <div class="btn c" id="CD">▼</div>
+      <div id="hud"><span id="conn">connecting</span><br /><span id="rtt">-</span></div>
+    </div>
+    <script type="module" src="/src/controller.ts"></script>
+  </body>
+</html>

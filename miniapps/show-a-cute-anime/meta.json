@@ -1,0 +1,13 @@
+{
+  "id": "show-a-cute-anime",
+  "title": "Bocchi",
+  "kind": "pixels",
+  "version": 2,
+  "description": "Show a cute anime girl sprite on the glasses' 576x288 monochrome display. Draw her in pixel-art style: big eyes, long hair, a simple outfit, centered on screen. Add a small idle animation like blinking and a gentle bob. Tapping switches between a few expressions (happy, wink, surprised).",
+  "updatedAt": 1792625289310,
+  "prompts": [
+    "Show a cute anime girl sprite on the glasses' 576x288 monochrome display. Draw her in pixel-art style: big eyes, long hair, a simple outfit, centered on screen. Add a small idle animation like blinking and a gentle bob. Tapping switches between a few expressions (happy, wink, surprised).",
+    "Change the character to Hitori \"Bocchi\" Gotoh from Bocchi the Rock. Give her long hair down past her shoulders with bangs over her eyes, two cube-shaped hair clips on one side, a baggy track jacket, and a guitar held in front of her. Make the expressions fit her: shy and nervous, anxious and sweating, a melting or glitching panic face, and a rare happy smile. Keep the blink and bob idle animation and tap to cycle expressions."
+  ],
+  "sessionId": "76a290c4-bc3f-4553-9e37-935b77c8fe5d"
+}

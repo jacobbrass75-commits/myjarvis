@@ -1,0 +1,12 @@
+{
+  "id": "coin-flip",
+  "title": "Coin Flip",
+  "kind": "pixels",
+  "version": 2,
+  "description": "Coin flip app: tap to flip a coin, show a brief flip animation, then display HEADS or TAILS in large text. Show a running tally of heads and tails counts (and total flips) below. Monochrome 576x288 display.",
+  "updatedAt": 1792377519633,
+  "prompts": [
+    "Coin flip app: tap to flip a coin, show a brief flip animation, then display HEADS or TAILS in large text. Show a running tally of heads and tails counts (and total flips) below. Monochrome 576x288 display.",
+    "Make the coin flip spin animation last only half a second (500ms) before showing the result."
+  ]
+}

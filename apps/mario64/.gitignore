@@ -1,0 +1,7 @@
+node_modules/
+dist/
+# Never commit a ROM or anything built from it.
+*.z64
+*.n64
+*.v64
+sm64/

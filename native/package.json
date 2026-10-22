@@ -1,0 +1,27 @@
+{
+  "name": "g2-native",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Prototype driver that talks to Even Realities G2 glasses (and the R1 ring) over BLE without the Even App.",
+  "scripts": {
+    "test": "node --test 'driver/test/*.test.ts'",
+    "typecheck": "tsc -p tsconfig.json",
+    "scan": "node driver/bin/scan.ts",
+    "hello": "node driver/bin/hello.ts"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "peerDependencies": {
+    "@abandonware/noble": "^1.9.2-25"
+  },
+  "peerDependenciesMeta": {
+    "@abandonware/noble": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "lc3codec": "^1.1.8"
+  }
+}

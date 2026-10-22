@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>G2 Stream Test</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 16px; background: #0b0d10; color: #d8dee6; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .muted { color: #8a94a3; font-size: 13px; }
+      .row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; align-items: flex-start; }
+      canvas { background: #000; border: 1px solid #2a3140; image-rendering: pixelated; max-width: 100%; }
+      #game { width: 480px; }
+      #preview { width: 576px; }
+      label { display: block; font-size: 13px; margin: 6px 0; }
+      select, input[type="range"] { width: 260px; }
+      table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+      td { padding: 2px 10px 2px 0; }
+      td:first-child { color: #8a94a3; }
+      a { color: #7fd1a5; }
+    </style>
+  </head>
+  <body>
+    <h1>G2 canvas stream test</h1>
+    <div class="muted">
+      relay: <span id="conn">connecting</span> · <span id="peers">-</span> · last glasses input: <span id="sinkInput">-</span> ·
+      <a href="./controller.html" target="_blank">controller</a> · <a href="./glasses.html" target="_blank">glasses page (browser sink)</a>
+    </div>
+    <div class="row">
+      <div>
+        <div class="muted">game canvas (WASD / J=A K=B L=Z Q/E=C, or phone / Bluetooth pad)</div>
+        <canvas id="game" width="320" height="240"></canvas>
+      </div>
+      <div>
+        <div class="muted">what the glasses should show (576x288, 16 levels)</div>
+        <canvas id="preview"></canvas>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>layout <select id="layout"></select></label>
+        <label>dither
+          <select id="dither"><option value="bayer">ordered (Bayer 4x4)</option><option value="fs">Floyd-Steinberg</option><option value="none">none</option></select>
+        </label>
+        <label>format to SDK
+          <select id="fmt"><option value="png8">PNG 8-bit grey</option><option value="png4">PNG 4-bit grey</option><option value="gray8">raw grey bytes</option></select>
+        </label>
+        <label>fit <select id="fit"><option value="contain">contain</option><option value="cover">cover</option></select></label>
+        <label>gamma <input id="gamma" type="range" min="0.5" max="2.5" step="0.05" /></label>
+        <label>contrast <input id="contrast" type="range" min="0.5" max="2" step="0.05" /></label>
+        <label>brightness <input id="brightness" type="range" min="-0.5" max="0.5" step="0.02" /></label>
+        <label><input id="pause" type="checkbox" /> pause scene (diffing should drop sends to 0)</label>
+      </div>
+      <table id="stats"></table>
+    </div>
+    <script type="module" src="/src/source.ts"></script>
+  </body>
+</html>

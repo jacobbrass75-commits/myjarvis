@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>G2 Stream Sink</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; padding: 16px; background: #000; color: #9fe6b8; font-size: 13px; }
+      canvas { width: 100%; max-width: 576px; background: #000; border: 1px solid #1f3a2a; image-rendering: pixelated; display: block; margin: 8px 0; }
+      pre { white-space: pre-wrap; color: #6d8f7b; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div><span id="mode">-</span> · relay <span id="conn">connecting</span></div>
+    <div id="stats">no frames yet</div>
+    <canvas id="emu" width="576" height="288"></canvas>
+    <pre id="log"></pre>
+    <script type="module" src="/src/sink.ts"></script>
+  </body>
+</html>

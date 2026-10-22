@@ -1,0 +1,23 @@
+{
+  "id": "news-reader-app-for",
+  "title": "News",
+  "kind": "text",
+  "version": 1,
+  "description": "A news reader app for the glasses: fetches current top headlines from a free RSS feed (e.g. BBC News, AP, or Google News RSS), shows a scrollable list of headlines, and selecting one shows the story's summary/description text paginated for the small monochrome display. Include a refresh option and a few category options (top, world, tech, sports).",
+  "updatedAt": 1792626791097,
+  "prompts": [
+    "A news reader app for the glasses: fetches current top headlines from a free RSS feed (e.g. BBC News, AP, or Google News RSS), shows a scrollable list of headlines, and selecting one shows the story's summary/description text paginated for the small monochrome display. Include a refresh option and a few category options (top, world, tech, sports)."
+  ],
+  "sessionId": "5bb1fe54-f32b-441d-9bd0-53d5bb9f9186",
+  "sessionProvider": "claude",
+  "builds": [
+    {
+      "version": 1,
+      "model": "balanced",
+      "modelId": "claude-sonnet-5-5",
+      "ms": 15545,
+      "tries": 1,
+      "at": 1792626791097
+    }
+  ]
+}

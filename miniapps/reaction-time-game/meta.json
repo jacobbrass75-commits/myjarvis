@@ -1,0 +1,14 @@
+{
+  "id": "reaction-time-game",
+  "title": "Reaction",
+  "kind": "text",
+  "version": 3,
+  "description": "A reaction-time game: wait a random 2-5 seconds for GO, then tap as fast as you can; show your time in ms and your best. Tapping too early is a false start.",
+  "updatedAt": 1792378608082,
+  "prompts": [
+    "A reaction-time game: wait a random 2-5 seconds for GO, then tap as fast as you can; show your time in ms and your best. Tapping too early is a false start.",
+    "Also show your last 3 times on the result screen, and say 'Too slow!' if you took over 1 second.",
+    "In the header, show the player's average reaction time in ms next to their best time. Count only valid taps in the average, not false starts."
+  ],
+  "sessionId": "0e714e39-b7e9-4ae3-a4ba-5065034b8049"
+}

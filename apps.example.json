@@ -1,0 +1,42 @@
+[
+  {
+    "name": "notes",
+    "description": "My notes app: capture and search notes.",
+    "baseUrl": "http://127.0.0.1:3001/api/",
+    "headers": { "Authorization": "Bearer ${NOTES_API_KEY}" },
+    "actions": [
+      {
+        "name": "add",
+        "description": "Save a new note.",
+        "method": "POST",
+        "path": "notes",
+        "params": {
+          "type": "object",
+          "properties": { "text": { "type": "string" }, "tags": { "type": "array", "items": { "type": "string" } } },
+          "required": ["text"]
+        }
+      },
+      {
+        "name": "search",
+        "description": "Search notes by keyword.",
+        "method": "GET",
+        "path": "notes",
+        "params": { "type": "object", "properties": { "q": { "type": "string" } }, "required": ["q"] }
+      }
+    ]
+  },
+  {
+    "name": "alien_music",
+    "description": "Generative music renderer: render a new track.",
+    "baseUrl": "http://127.0.0.1:8000/",
+    "actions": [
+      {
+        "name": "render",
+        "description": "Render a new piece of audio with a given wildness (0 to 2).",
+        "method": "POST",
+        "path": "render",
+        "params": { "type": "object", "properties": { "wildness": { "type": "number" }, "seconds": { "type": "number" } } }
+      }
+    ]
+  }
+]

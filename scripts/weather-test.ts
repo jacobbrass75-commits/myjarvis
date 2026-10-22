@@ -1,0 +1,346 @@
+// Weather map, offline: projection, the Open-Meteo grid request and parsing (canned JSON), contours,
+// highs/lows, streamlines and particle frames, the renderer's layers and lit budget, tile packing,
+// the service's cache and rate limits (fake fetch), RainViewer tiles, and the glasses WEATHER screen.
+//   node --import tsx --test scripts/weather-test.ts
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { HubMsg, WxMap } from "../src/shared/protocol.js";
+import { fromB64, pack4, Raster, toB64, unpack4 } from "../src/shared/raster.js";
+import {
+  contour, extrema, GRID, gridPoints, hourIndex, LAT_N, LAT_S, lattice, LON_E, LON_W, openMeteoUrl, parseOpenMeteo, polyLength, project,
+  sampleCubic, unproject, windUV, WX_H, WX_W,
+} from "../src/hub/weather/grid.js";
+import { mercator, radarFrom, radarTiles } from "../src/hub/weather/radar.js";
+import { CITIES, inCalifornia, isobarInterval, particleFrames, renderWx, streamlines, WX_LAYERS, WX_STEPS } from "../src/hub/weather/render.js";
+import { WeatherService } from "../src/hub/weather/service.js";
+import { REGIONS } from "../src/hub/weather/outline.js";
+import { CANNED_META, cannedOpenMeteo, HIGH, LOW, pressureAt, T0 } from "./wx-fixture.js";
+
+const json = (j: unknown, status = 200) => new Response(JSON.stringify(j), { status, headers: { "Content-Type": "application/json" } });
+const near = (a: number, b: number, tol: number, what = "") => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} vs ${b} (±${tol})`);
+const tiles4 = (r: Raster) => [r.crop(0, 0, 288, 144), r.crop(288, 0, 288, 144), r.crop(0, 144, 288, 144), r.crop(288, 144, 288, 144)];
+
+// ---------------- projection ----------------
+
+test("projection: California fits between the readouts, round trips, north up", () => {
+  const [sx, sy] = project(37.77, -122.42);
+  near(sx, 257, 2, "SF x");
+  near(sy, 130, 2, "SF y");
+  const back = unproject(sx, sy);
+  near(back.lat, 37.77, 1e-9);
+  near(back.lon, -122.42, 1e-9);
+  assert.deepEqual(project(LAT_N, -121).map(Math.round), [288, 0]);
+  near(project(LAT_S, -121)[1], WX_H, 1e-9);
+  assert.ok(project(38, -120)[1] < project(37, -120)[1], "north is up");
+  assert.ok(project(37, -119)[0] > project(37, -120)[0], "east is right");
+  // the whole state is on the lens, clear of the side panels (x 206..446)
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const r of REGIONS.find((r) => r.id === "CA")!.rings)
+    for (let i = 0; i < r.length; i += 2) {
+      const [x, y] = project(r[i + 1], r[i]);
+      [x0, x1, y0, y1] = [Math.min(x0, x), Math.max(x1, x), Math.min(y0, y), Math.max(y1, y)];
+    }
+  assert.ok(x0 > 206 && x1 < 446 && y0 > 0 && y1 < WX_H, `CA spans x ${x0}..${x1}, y ${y0}..${y1}`);
+  // grid covers the lens
+  assert.ok(GRID.lon0 <= LON_W && GRID.lon0 + (GRID.nx - 1) * GRID.dlon >= LON_E);
+  assert.ok(GRID.lat0 <= LAT_S && GRID.lat0 + (GRID.ny - 1) * GRID.dlat >= LAT_N);
+});
+
+test("outline: small, and inCalifornia knows LA from Reno and the ocean", () => {
+  const pts = REGIONS.reduce((n, r) => n + r.rings.reduce((m, x) => m + x.length / 2, 0), 0);
+  assert.ok(pts > 300 && pts < 3000, `${pts} points`);
+  assert.equal(inCalifornia(34.05, -118.24), true);
+  assert.equal(inCalifornia(36.74, -119.79), true);
+  assert.equal(inCalifornia(39.53, -119.81), false, "Reno");
+  assert.equal(inCalifornia(35, -125), false, "Pacific");
+  for (const c of CITIES) assert.equal(inCalifornia(c.lat, c.lon) || c.name === "SF", true, c.name);
+});
+
+// ---------------- Open-Meteo ----------------
+
+test("open-meteo: one request for the grid, parsed back in order", () => {
+  const pts = gridPoints();
+  assert.equal(pts.length, 260);
+  assert.deepEqual(pts[0], { lat: 31.5, lon: -135 });
+  assert.deepEqual(pts[GRID.nx], { lat: 32.5, lon: -135 });
+  const url = new URL(openMeteoUrl());
+  // the grid, then the five cities
+  assert.equal(url.searchParams.get("latitude")!.split(",").length, 265);
+  assert.equal(url.searchParams.get("longitude")!.split(",").at(-1), "-117.16");
+  assert.equal(url.searchParams.get("hourly"), "pressure_msl,temperature_2m,wind_speed_10m,wind_direction_10m,precipitation");
+  assert.equal(url.searchParams.get("models"), "gfs_global");
+  assert.equal(url.searchParams.get("forecast_hours"), "26");
+  assert.equal(url.searchParams.get("cell_selection"), "nearest");
+  assert.equal(url.searchParams.get("wind_speed_unit"), "mph");
+  assert.ok(url.toString().length < 8000, "fits a GET");
+
+  const canned = cannedOpenMeteo() as any[];
+  canned[5].hourly.pressure_msl[0] = null; // a gap
+  const g = parseOpenMeteo(canned);
+  assert.equal(g.times.length, 26);
+  assert.equal(g.sites.length, CITIES.length);
+  near(g.sites[3].v.p[0], pressureAt(34.05, -118.24), 0.06, "LA's own reading");
+  assert.equal(g.times[0], T0 * 1000);
+  const k = 7 * GRID.nx + 4; // lat 38.5, lon -129
+  near(g.vars.p[0][k], pressureAt(38.5, -129), 0.06);
+  assert.ok(Number.isFinite(g.vars.p[0][5]) && g.vars.p[0][5] > 990);
+  // wind direction is where it blows FROM: north of the low the flow is westward (from ~east)
+  const n = (Math.round(LOW.lat + 3 - GRID.lat0)) * GRID.nx + Math.round((LOW.lon - GRID.lon0) / GRID.dlon);
+  const [u] = windUV(g.vars.ws[0][n], g.vars.wd[0][n]);
+  assert.ok(u < 0, `u ${u} north of the low`);
+  assert.equal(hourIndex(g, T0 * 1000 + 6.4 * 3_600_000), 6);
+  assert.equal(hourIndex(g, 0), 0);
+  assert.throws(() => parseOpenMeteo(canned.slice(1)), /264 locations, wanted 265/);
+  assert.throws(() => parseOpenMeteo({ error: true, reason: "x" }), /locations/);
+});
+
+// ---------------- contours, extrema ----------------
+
+test("contour: a bowl gives closed rings at the right radius; a ramp gives edge-to-edge lines", () => {
+  const cx = 300, cy = 150;
+  const bowl = lattice((lat, lon) => {
+    const [x, y] = project(lat, lon);
+    return Math.hypot(x - cx, y - cy);
+  });
+  const rings = contour(bowl, 60);
+  assert.equal(rings.length, 1);
+  const ring = rings[0];
+  assert.deepEqual(ring[0], ring[ring.length - 1], "closed");
+  for (const [x, y] of ring) near(Math.hypot(x - cx, y - cy), 60, 1.5, "radius");
+  near(polyLength(ring), 2 * Math.PI * 60, 6, "length");
+
+  const ramp = lattice((lat, lon) => project(lat, lon)[0]);
+  const lines = contour(ramp, 101);
+  assert.equal(lines.length, 1);
+  const line = lines[0];
+  for (const [x] of line) near(x, 101, 1e-3);
+  const ys = line.map((p) => p[1]).sort((a, b) => a - b);
+  assert.equal(ys[0], 0);
+  assert.equal(ys[ys.length - 1], WX_H);
+  // a level outside the field: nothing; a saddle: no throw, all points finite
+  assert.equal(contour(ramp, 9999).length, 0);
+  const saddle = lattice((lat, lon) => {
+    const [x, y] = project(lat, lon);
+    return (x - 288) * (y - 144);
+  });
+  for (const l of contour(saddle, 0)) for (const p of l) assert.ok(p.every(Number.isFinite));
+});
+
+test("extrema: the canned low and high, nothing on a plain gradient", () => {
+  const g = parseOpenMeteo(cannedOpenMeteo());
+  const p = lattice((la, lo) => sampleCubic(g.vars.p[0], g, la, lo));
+  const ex = extrema(p, { minProm: 1 });
+  const L = ex.filter((e) => e.kind === "L"), H = ex.filter((e) => e.kind === "H");
+  assert.equal(L.length, 1);
+  assert.equal(H.length, 1);
+  const [lx, ly] = project(LOW.lat, LOW.lon), [hx, hy] = project(HIGH.lat, HIGH.lon);
+  near(L[0].x, lx, 10, "L x");
+  near(L[0].y, ly, 10, "L y");
+  near(L[0].value, 1012 - LOW.depth, 2.5, "L hPa");
+  near(H[0].x, hx, 10, "H x");
+  near(H[0].y, hy, 10, "H y");
+  assert.equal(extrema(lattice((lat) => 1000 + lat)).length, 0);
+  assert.equal(isobarInterval(p), 4);
+  assert.equal(isobarInterval(lattice(() => 1013)), 2);
+});
+
+test("streamlines follow the wind and particles move along them", () => {
+  // uniform flow east: horizontal lines, spaced apart
+  const vx = lattice(() => 10), vy = lattice(() => 0);
+  const lines = streamlines(vx, vy);
+  assert.ok(lines.length > 10);
+  for (const l of lines) {
+    for (const [, y] of l) near(y, l[0][1], 0.01);
+    assert.ok(l[l.length - 1][0] > l[0][0], "drawn in the direction of flow");
+  }
+  const frames = particleFrames(lines);
+  assert.equal(frames.length, 4);
+  assert.ok(frames.every((f) => f.length > 40 && f.length % 4 === 0));
+  // frame 1's dashes sit 7.5 px further downstream than frame 0's on the same line
+  assert.notDeepEqual(frames[0].slice(0, 4), frames[1].slice(0, 4));
+  near(frames[1][0] - frames[0][0], 7.5, 1, "particle step");
+  // calm: no lines
+  assert.equal(streamlines(lattice(() => 0), lattice(() => 0)).length, 0);
+});
+
+// ---------------- render ----------------
+
+test("render: every layer and step within the lens budget, with readouts and the right extras", () => {
+  const g = parseOpenMeteo(cannedOpenMeteo());
+  for (const layer of WX_LAYERS)
+    for (const step of WX_STEPS) {
+      const r = renderWx(g, { layer, step, now: T0 * 1000, run: (T0 - 6 * 3600) * 1000, pos: { lat: 37.87, lon: -122.27 } });
+      assert.equal(r.img.w, WX_W);
+      assert.equal(r.valid, (T0 + step * 3600) * 1000);
+      tiles4(r.img).forEach((t, i) => assert.ok(t.lit() < 0.15 && t.lit() > 0.02, `${layer} +${step} tile ${i} lit ${t.lit()}`));
+      assert.equal(r.frames.length, layer === "pressure" ? 4 : 0);
+      if (layer === "pressure") {
+        assert.ok(r.isobars.includes(1020) && r.isobars.includes(step ? 1004 : 1000), `+${step} isobars ${r.isobars}`);
+        assert.ok(r.extrema.some((e) => e.kind === "L"));
+      }
+      // the lens frame and the position marker
+      assert.ok(r.img.get(100, 0) > 0);
+      const [px, py] = project(37.87, -122.27).map(Math.round);
+      assert.equal(r.img.get(px - 5, py), 15);
+    }
+  // the step ladder lights the step drawn: NOW for 0, the last box for +24
+  const a = renderWx(g, { layer: "pressure", step: 0, now: T0 * 1000 }).img, b = renderWx(g, { layer: "pressure", step: 24, now: T0 * 1000 }).img;
+  assert.equal(a.get(460, 51), 15);
+  assert.notEqual(b.get(460, 51), 15);
+  assert.equal(b.get(456 + 3 * 27 + 4, 51), 15);
+});
+
+test("render: precip uses radar at NOW when there is one", () => {
+  const g = parseOpenMeteo(cannedOpenMeteo());
+  const radar = { at: T0 * 1000, sample: (lat: number, lon: number) => (Math.hypot(lat - 34, lon + 118) < 1 ? 0.8 : 0) };
+  const r = renderWx(g, { layer: "precip", step: 0, now: T0 * 1000, radar });
+  assert.equal(r.source, "RADAR");
+  const [x, y] = project(34.6, -117.6).map(Math.round);
+  let dots = 0;
+  for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) if (r.img.get(x + i, y + j) >= 9) dots++;
+  assert.ok(dots >= 3, `${dots} bright radar dots near LA`);
+  assert.equal(renderWx(g, { layer: "precip", step: 6, now: T0 * 1000, radar }).source, "MODEL");
+});
+
+test("tiles: the map packs to 82,944 bytes and comes back as four exact 288x144 tiles", () => {
+  const g = parseOpenMeteo(cannedOpenMeteo());
+  const { img } = renderWx(g, { layer: "temp", step: 0, now: T0 * 1000 });
+  const packed = pack4(img);
+  assert.equal(packed.length, 576 * 288 / 2);
+  const back = unpack4(fromB64(toB64(packed)), 576, 288);
+  assert.deepEqual(Array.from(back.px), Array.from(img.px));
+  const t = tiles4(back);
+  assert.equal(t[3].get(0, 0), img.get(288, 144));
+  assert.equal(t[1].get(287, 143), img.get(575, 143));
+});
+
+// ---------------- service ----------------
+
+function fakeFetch(calls: { url: string; ua?: string }[], o: { fail?: boolean } = {}): typeof fetch {
+  return (async (input: any, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, ua: (init?.headers as Record<string, string> | undefined)?.["User-Agent"] });
+    if (o.fail) throw new Error("offline");
+    if (url.includes("meta.json")) return json(CANNED_META);
+    if (url.includes("rainviewer")) return json({ host: "https://tilecache.rainviewer.com", radar: { past: [] } });
+    return json(cannedOpenMeteo());
+  }) as typeof fetch;
+}
+
+test("service: one forecast fetch per 20 minutes, a daily cap, stale data when offline", async () => {
+  let now = T0 * 1000;
+  const calls: { url: string; ua?: string }[] = [];
+  let fail = false;
+  const inner = fakeFetch(calls);
+  const svc = new WeatherService({ fetcher: (async (u: any, i: any) => (fail ? Promise.reject(new Error("offline")) : inner(u, i))) as typeof fetch, now: () => now, tempUnit: "F" });
+  const forecasts = () => calls.filter((c) => c.url.includes("/v1/forecast")).length;
+  const m1 = await svc.map("pressure", 0);
+  assert.equal(forecasts(), 1);
+  assert.ok(calls.every((c) => /g2-orchestrator/.test(c.ua ?? "")), "User-Agent on every request");
+  assert.equal(m1.run, CANNED_META.last_run_initialisation_time * 1000);
+  assert.equal(m1.frames?.length, 4);
+  assert.equal(unpack4(fromB64(m1.px), 576, 288).px.length, 576 * 288);
+  const m2 = await svc.map("pressure", 0);
+  assert.equal(m2, m1, "same render from the cache");
+  await svc.map("temp", 12);
+  assert.equal(forecasts(), 1);
+  now += 21 * 60_000;
+  await svc.map("pressure", 0);
+  assert.equal(forecasts(), 2);
+  // offline: the old data still draws
+  fail = true;
+  now += 21 * 60_000;
+  const m3 = await svc.map("wind", 6);
+  assert.equal(m3.layer, "wind");
+  // the cap: at most 24 fetches in 24 hours
+  fail = false;
+  for (let i = 0; i < 40; i++) {
+    now += 21 * 60_000;
+    await svc.map("pressure", 0);
+  }
+  assert.ok(forecasts() <= 24, `${forecasts()} fetches`);
+  // a bad layer or step falls back to defaults
+  const m4 = await svc.map("bogus" as any, 5);
+  assert.equal(m4.layer, "pressure");
+  assert.equal(m4.step, 0);
+});
+
+test("service: no data at all answers wx_map null with the reason", async () => {
+  const sent: HubMsg[] = [];
+  const svc = new WeatherService({ fetcher: fakeFetch([], { fail: true }) });
+  await svc.handle((m) => sent.push(m), "pressure", 0, { lat: 37, lon: -122 });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].t, "wx_map");
+  assert.equal((sent[0] as any).map, null);
+  assert.match((sent[0] as any).error, /offline/);
+});
+
+// ---------------- radar ----------------
+
+test("radar: zoom-5 tiles cover the lens; samples come from the right tile pixel", () => {
+  const t = radarTiles();
+  assert.deepEqual(t, [[4, 11], [5, 11], [6, 11], [4, 12], [5, 12], [6, 12]]);
+  const [mx, my] = mercator(34, -118);
+  const tx = Math.floor(mx / 256), ty = Math.floor(my / 256);
+  const px = new Uint8Array(256 * 256);
+  px[Math.floor(my % 256) * 256 + Math.floor(mx % 256)] = 200;
+  const r = radarFrom(new Map([[`${tx},${ty}`, { w: 256, h: 256, px }]]), 1);
+  assert.ok(r.sample(34, -118) > 0.8);
+  assert.equal(r.sample(34.5, -118), 0);
+  assert.equal(r.sample(20, -150), 0, "no tile there");
+});
+
+// ---------------- glasses ----------------
+
+test("glasses: WEATHER asks for the map, shows it in four tiles, swipes layers and taps steps", async () => {
+  const modPath = "../glasses/src/modes/weather.ts";
+  const corePath = "../glasses/src/core.ts";
+  const layoutPath = "../glasses/src/ui/layout.ts";
+  const { weather, weatherTo } = await import(modPath);
+  const { containers, core } = await import(corePath);
+  const { checkLayout } = await import(layoutPath);
+  const sent: any[] = [];
+  core.ws = { readyState: 1, send: (s: string) => sent.push(JSON.parse(s)) };
+  core.stack = [weather];
+  weather.enter();
+  assert.deepEqual(sent.pop(), { t: "wx_get", layer: "pressure", step: 0 });
+  let s = weather.screen();
+  assert.equal(s.noHeader, true);
+  assert.deepEqual(s.tiles.map((t: any) => [t.slot, t.x, t.y, t.img.w, t.img.h]), [[0, 0, 0, 288, 144], [1, 288, 0, 288, 144], [2, 0, 144, 288, 144], [3, 288, 144, 288, 144]]);
+  checkLayout(containers(s));
+
+  const svc = new WeatherService({ fetcher: fakeFetch([]), now: () => T0 * 1000 });
+  const map: WxMap = await svc.map("pressure", 0);
+  weather.onHub({ t: "wx_map", map });
+  s = weather.screen();
+  const img = unpack4(fromB64(map.px), 576, 288);
+  // the tiles are the hub's map plus frame 0's particle dashes
+  let diff = 0;
+  tiles4(img).forEach((t, i) => t.px.forEach((v, k) => (diff += v !== s.tiles[i].img.px[k] ? 1 : 0)));
+  assert.ok(diff > 50 && diff < 3000, `${diff} particle pixels`);
+  checkLayout(containers(s));
+
+  // swipe down: next layer; an answer for the old one is ignored
+  assert.equal(weather.gesture("down", 0), true);
+  assert.deepEqual(sent.pop(), { t: "wx_get", layer: "temp", step: 0 });
+  weather.onHub({ t: "wx_map", map: { ...map, seq: 99 } });
+  assert.ok(weather.screen().tiles[3].img.px.some((v: number, k: number) => v !== s.tiles[3].img.px[k]), "LOADING tag while the new layer is coming");
+  assert.equal(weather.gesture("up", 0), true);
+  assert.deepEqual(sent.pop(), { t: "wx_get", layer: "pressure", step: 0 });
+  // tap: forecast steps, round
+  for (const h of [6, 12, 24, 0]) {
+    assert.equal(weather.gesture("tap", 0), true);
+    assert.deepEqual(sent.pop(), { t: "wx_get", layer: "pressure", step: h });
+  }
+  // double tap goes back (not handled here); hold stays push-to-talk (no hold handler)
+  assert.equal(weather.gesture("double", 0), false);
+  assert.equal(weather.hold, undefined);
+  // voice: "temperature map for tomorrow"
+  weatherTo({ layer: "temp", step: 20 });
+  assert.deepEqual(sent.pop(), { t: "wx_get", layer: "temp", step: 24 });
+  // the hub couldn't get data: a note instead of a map
+  weather.onHub({ t: "wx_map", map: null, error: "open-meteo 429" });
+  checkLayout(containers(weather.screen()));
+  weather.exit();
+});

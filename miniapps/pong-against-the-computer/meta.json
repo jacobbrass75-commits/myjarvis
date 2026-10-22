@@ -1,0 +1,13 @@
+{
+  "id": "pong-against-the-computer",
+  "title": "Pong",
+  "kind": "pixels",
+  "version": 2,
+  "description": "Pong against the computer. Swipe up/down moves your paddle on the left; the computer paddle on the right is beatable. First to 5 wins; tap to start or restart.",
+  "updatedAt": 1792122578682,
+  "prompts": [
+    "Pong against the computer. Swipe up/down moves your paddle on the left; the computer paddle on the right is beatable. First to 5 wins; tap to start or restart.",
+    "The computer is too good. Make its paddle slower so I can win, and make the ball a bit bigger."
+  ],
+  "sessionId": "6051bc96-110b-491e-ac2e-1d7bd2660dc4"
+}

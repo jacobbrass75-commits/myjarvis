@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0b0d0c" />
+<title>Studio</title>
+<style>
+  :root {
+    --bg: #f6f7f6; --card: #ffffff; --ink: #121614; --muted: #66706b; --line: #dfe3e0;
+    --accent: #13824c; --accent-ink: #fff; --warn: #b8860b; --bad: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0b0d0c; --card: #141917; --ink: #e3ece7; --muted: #8b9690; --line: #24302a;
+      --accent: #3ccf82; --accent-ink: #04140b; --warn: #e6b450; --bad: #ff6b5b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 -apple-system, system-ui, sans-serif;
+    padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 4px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+  textarea { font: inherit; width: 100%; min-height: 84px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); resize: vertical; }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  button { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 10px; padding: 10px 14px; min-height: 44px; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); flex: 1; }
+  button.small { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  button.danger { color: var(--bad); }
+  #mic.live { background: var(--bad); color: #fff; border-color: var(--bad); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chip { font-size: 13px; padding: 6px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--card); cursor: pointer; }
+  .job { display: flex; gap: 10px; align-items: flex-start; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; flex: 0 0 auto; background: var(--warn); }
+  .dot.ready { background: var(--accent); } .dot.failed { background: var(--bad); }
+  .dot.working, .dot.checking, .dot.fixing { animation: pulse 1s infinite alternate; }
+  @keyframes pulse { to { opacity: .3; } }
+  .app-head { display: flex; align-items: baseline; gap: 8px; }
+  .app-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .models { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .model { flex: 1 1 0; min-width: 84px; min-height: 48px; padding: 6px 8px; text-align: left; line-height: 1.2; }
+  .model small { display: block; font-weight: 400; font-size: 11px; color: var(--muted); }
+  .model.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .model-group { flex: 1 0 100%; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .builds { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .builds summary { cursor: pointer; }
+  .builds ol { margin: 4px 0 0; padding-left: 18px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  /* The glasses emulator is laid out for its 576px lens; draw it at that size and scale it to fit. */
+  .preview { position: relative; margin-top: 10px; border-radius: 12px; overflow: hidden; background: #0b0d0c; height: 470px; }
+  .preview iframe { position: absolute; top: 0; left: 0; width: 610px; height: 470px; border: 0; transform-origin: 0 0; }
+  .err { color: var(--bad); }
+  .empty { color: var(--muted); padding: 6px 2px; }
+  #toast { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg);
+    padding: 8px 14px; border-radius: 99px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Studio</h1>
+  <a href="./" class="muted">← Jarvis</a>
+</header>
+<p class="muted">Describe an app or game for your glasses. Claude writes it, test-runs it, and it appears under <b>Apps</b> on the glasses.</p>
+
+<div class="card">
+  <textarea id="idea" placeholder="A snake game where the ring steers…"></textarea>
+  <div class="chips" id="ideas"></div>
+  <div class="models" id="models" role="radiogroup" aria-label="Model"></div>
+  <div class="row">
+    <button id="mic" aria-label="Speak your idea">🎙</button>
+    <button id="cancel" hidden>Cancel</button>
+    <button class="primary" id="make">Make it</button>
+  </div>
+</div>
+
+<h2>Building</h2>
+<div id="jobs"><div class="empty">Nothing building.</div></div>
+
+<h2>Your apps</h2>
+<div id="apps"><div class="empty">No apps yet.</div></div>
+<div id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+const qs = new URLSearchParams(location.search);
+if (qs.get("token")) { store.set("hubToken", qs.get("token")); history.replaceState(null, "", location.pathname); }
+const token = store.get("hubToken") || "";
+
+const IDEAS = ["Snake steered with ring swipes", "A trivia quiz Claude writes on the fly", "Pong against the computer",
+  "A 2-minute breathing exercise", "Wordle with 5-letter words", "A pomodoro timer with tap to pause", "Flashcards for Spanish verbs", "A reaction-time game"];
+$("ideas").innerHTML = IDEAS.map((i) => `<span class="chip">${esc(i)}</span>`).join("");
+$("ideas").onclick = (e) => { const c = e.target.closest(".chip"); if (c) $("idea").value = c.textContent; };
+
+let ws, apps = [], jobs = new Map(), preview = null, editing = null;
+// Models the hub offers (unavailable ones, like DeepSeek without its key, aren't shown; OpenRouter's
+// come only with OPENROUTER_API_KEY). The pick is remembered on this phone.
+let models = [], defaultModel = "balanced", model = store.get("studioModel") || "";
+const modelName = (id) => models.find((o) => o.id === id)?.label ?? ({ fast: "Fast", balanced: "Balanced", best: "Best", deepseek: "DeepSeek", codex: "Codex" })[id] ?? String(id ?? "").replace(/^openrouter:/, "");
+const took = (ms) => (ms >= 60_000 ? `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s` : `${Math.round(ms / 1000)} s`);
+function renderModels() {
+  const shown = models.filter((o) => o.available);
+  if (!shown.some((o) => o.id === model)) model = defaultModel;
+  const button = (o) => `<button class="model${o.id === model ? " on" : ""}" role="radio" aria-checked="${o.id === model}" data-model="${esc(o.id)}">${esc(o.label)}<small>${esc(o.detail)}</small></button>`;
+  // Ungrouped (Claude, DeepSeek, Codex) first, then each group (OpenRouter) under its own heading.
+  const groups = [...new Set(shown.map((o) => o.group).filter(Boolean))];
+  $("models").innerHTML = shown.filter((o) => !o.group).map(button).join("") +
+    groups.map((g) => `<div class="model-group">${esc(g)}</div>` + shown.filter((o) => o.group === g).map(button).join("")).join("");
+}
+$("models").onclick = (e) => {
+  const b = e.target.closest("[data-model]");
+  if (!b) return;
+  model = b.dataset.model;
+  store.set("studioModel", model);
+  renderModels();
+};
+function connect() {
+  ws = new WebSocket(location.origin.replace(/^http/, "ws") + "/ws");
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ t: "hello", role: "phone", token }));
+    ws.send(JSON.stringify({ t: "studio_models_get" }));
+    // The hub doesn't replay builds; one still "working" from before a hub restart is gone.
+    for (const [id, j] of jobs) if (j.status !== "ready" && j.status !== "failed") jobs.delete(id);
+    renderJobs();
+  };
+  ws.onmessage = (e) => {
+    const m = JSON.parse(e.data);
+    if (m.t === "miniapps") { apps = m.apps; renderApps(); }
+    else if (m.t === "studio_models") { models = m.models; defaultModel = m.default; renderModels(); }
+    else if (m.t === "studio") {
+      jobs.set(m.job.id, m.job);
+      renderJobs();
+      if (m.job.status === "ready") toast(`${m.job.title} is ready`);
+      else if (m.job.status === "failed") toast(`${m.job.title} didn't build`);
+    }
+    else if (m.t === "toast" || m.t === "error") toast(m.text);
+  };
+  ws.onclose = () => setTimeout(connect, 2000);
+}
+const sendHub = (m) => (ws && ws.readyState === 1 ? (ws.send(JSON.stringify(m)), true) : (toast("Not connected"), false));
+
+let toastT;
+function toast(t) { $("toast").textContent = t; $("toast").classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => $("toast").classList.remove("show"), 2800); }
+
+function renderJobs() {
+  const list = [...jobs.values()].filter((j) => Date.now() - j.at < 10 * 60_000).sort((a, b) => b.at - a.at);
+  $("jobs").innerHTML = list.length ? list.map((j) => `
+    <div class="card job"><span class="dot ${j.status}"></span><div><b>${esc(j.title)}</b> <span class="muted">${esc(j.status)}${j.version ? ` · v${j.version}` : ""}${j.model ? ` · ${esc(modelName(j.model))}` : ""}${j.status === "ready" && j.ms ? ` · ${took(j.ms)}` : ""}</span><div class="${j.status === "failed" ? "err" : "muted"}">${esc(j.log)}</div>
+      ${j.status === "failed" && j.prompt ? `<div class="row"><button class="small" data-retry="${esc(j.id)}">Try again</button><button class="small" data-reword="${esc(j.id)}">Reword…</button></div>` : ""}</div></div>`).join("")
+    : `<div class="empty">Nothing building.</div>`;
+}
+
+// Cards are kept when nothing about them changed, so an open preview isn't reloaded each time the
+// list changes (another build finishing); the preview hot-reloads its app by itself.
+const badge = (a) => `${a.kind === "pixels" ? "game" : "app"} · v${a.version}`;
+// Who built each version and how long it took (newest first; versions from before models have none).
+const builds = (a) => {
+  const b = [...(a.builds ?? [])].reverse();
+  if (!b.length) return "";
+  const line = (x) => `v${x.version} · ${esc(modelName(x.model))}${x.modelId ? ` (${esc(x.modelId)})` : ""} · ${took(x.ms)}${x.tries > 1 ? ` · ${x.tries} tries` : ""}${x.fix ? " · crash fix" : ""}`;
+  return b.length === 1 ? line(b[0]) : `<details><summary>${line(b[0])}</summary><ol reversed>${b.slice(1).map((x) => `<li>${line(x)}</li>`).join("")}</ol></details>`;
+};
+const cardKey = (a) => JSON.stringify([a.title, a.kind, a.description, preview === a.id]);
+const cardHtml = (a) => `
+  <div class="app-head"><b>${esc(a.title)}</b><span class="badge">${badge(a)}</span></div>
+  <div class="muted">${esc(a.description)}</div>
+  <div class="builds">${builds(a)}</div>
+  <div class="row">
+    <button class="small" data-open="${a.id}">On glasses</button>
+    <button class="small" data-preview="${a.id}">${preview === a.id ? "Hide preview" : "Preview"}</button>
+    <button class="small" data-edit="${a.id}">Change…</button>
+    <button class="small danger" data-del="${a.id}">Delete</button>
+  </div>
+  ${preview === a.id ? `<div class="preview"><iframe src="/glasses/?emulate=1&token=${encodeURIComponent(token)}&open=${encodeURIComponent(a.id)}&v=${a.version}" title="Glasses preview"></iframe></div>
+    <div class="muted">Use the buttons under the lens, or keys: ↑/↓ swipe · Enter tap · Backspace double tap</div>` : ""}`;
+
+function renderApps() {
+  const box = $("apps");
+  if (!apps.length) return void (box.innerHTML = `<div class="empty">No apps yet. Describe one above.</div>`);
+  const ids = new Set(apps.map((a) => a.id));
+  const have = new Map();
+  for (const el of [...box.children]) {
+    if (el.dataset.id && ids.has(el.dataset.id)) have.set(el.dataset.id, el);
+    else el.remove(); // first, so the cards that stay never move (moving an iframe reloads it)
+  }
+  apps.forEach((a, i) => {
+    let el = have.get(a.id);
+    if (!el || el.dataset.key !== cardKey(a)) {
+      const fresh = Object.assign(document.createElement("div"), { className: "card", innerHTML: cardHtml(a) });
+      Object.assign(fresh.dataset, { id: a.id, key: cardKey(a) });
+      if (el) el.replaceWith(fresh);
+      el = fresh;
+    }
+    el.querySelector(".badge").textContent = badge(a);
+    const b = builds(a), box2 = el.querySelector(".builds");
+    if (box2.dataset.html !== b) { box2.innerHTML = b; box2.dataset.html = b; }
+    if (box.children[i] !== el) box.insertBefore(el, box.children[i] ?? null);
+  });
+  fitPreview();
+}
+function fitPreview() {
+  for (const box of document.querySelectorAll(".preview")) {
+    const s = Math.min(1, box.clientWidth / 610);
+    box.style.height = `${470 * s}px`;
+    box.firstElementChild.style.transform = `scale(${s})`;
+  }
+}
+addEventListener("resize", fitPreview);
+
+function setEditing(id) {
+  editing = id;
+  const title = apps.find((a) => a.id === id)?.title;
+  $("idea").placeholder = id ? `What should change in ${title}?` : "A snake game where the ring steers…";
+  $("make").textContent = id ? `Change ${title}` : "Make it";
+  $("cancel").hidden = !id;
+}
+$("cancel").onclick = () => { setEditing(null); $("idea").value = ""; };
+
+let armedDelete = null, armedT;
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-open],[data-preview],[data-edit],[data-del],[data-retry],[data-reword]");
+  if (!t) return;
+  if (t.dataset.open) { if (sendHub({ t: "miniapp_open", id: t.dataset.open })) toast("Opening on glasses…"); }
+  else if (t.dataset.preview) { preview = preview === t.dataset.preview ? null : t.dataset.preview; renderApps(); }
+  else if (t.dataset.edit) {
+    setEditing(t.dataset.edit);
+    $("idea").focus();
+    scrollTo({ top: 0, behavior: "smooth" });
+  } else if (t.dataset.del) {
+    // Tap twice (confirm() is a no-op inside the iPhone app's web view).
+    const id = t.dataset.del;
+    if (armedDelete !== id) {
+      document.querySelectorAll("[data-del]").forEach((b) => (b.textContent = "Delete"));
+      armedDelete = id;
+      t.textContent = "Tap again to delete";
+      clearTimeout(armedT);
+      armedT = setTimeout(() => { armedDelete = null; t.textContent = "Delete"; }, 3000);
+    } else if (sendHub({ t: "studio_delete", id })) {
+      armedDelete = null;
+      jobs.delete(id);
+      if (preview === id) preview = null;
+      if (editing === id) setEditing(null);
+      renderJobs();
+    }
+  } else {
+    // A failed build: run the same request again, or put it back in the box to reword it.
+    const j = jobs.get(t.dataset.retry || t.dataset.reword);
+    if (!j?.prompt) return;
+    const id = apps.some((a) => a.id === j.id) ? j.id : undefined; // a new app that failed is gone
+    if (t.dataset.retry) { if (sendHub({ t: "studio_make", prompt: j.prompt, id, model: j.model })) { jobs.delete(j.id); renderJobs(); toast("Trying again"); } }
+    else { setEditing(id ?? null); $("idea").value = j.prompt; $("idea").focus(); scrollTo({ top: 0, behavior: "smooth" }); }
+  }
+});
+
+$("make").onclick = () => {
+  const prompt = $("idea").value.trim();
+  if (!prompt) return toast("Describe the app first");
+  if (sendHub({ t: "studio_make", prompt, id: editing || undefined, model: model || undefined })) {
+    $("idea").value = "";
+    setEditing(null);
+    toast(`${modelName(model || defaultModel)} is on it`);
+  }
+};
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) $("mic").hidden = true;
+else {
+  let rec = null;
+  $("mic").onclick = () => {
+    if (rec) return rec.stop();
+    rec = new SR(); rec.lang = navigator.language || "en-US"; rec.interimResults = true;
+    const before = $("idea").value;
+    rec.onresult = (ev) => { $("idea").value = (before ? before + " " : "") + [...ev.results].map((r) => r[0].transcript).join(" "); };
+    rec.onend = () => { rec = null; $("mic").classList.remove("live"); };
+    rec.start(); $("mic").classList.add("live");
+  };
+}
+
+if (!token) toast("Open Jarvis once with ?token=YOUR_HUB_TOKEN");
+connect();
+</script>
+</body>
+</html>

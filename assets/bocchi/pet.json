@@ -1,0 +1,13 @@
+{
+  "slug": "momo-4",
+  "displayName": "Bocchi",
+  "description": "A shy, curious pink-haired chibi helper with huge navy eyes, a pastel bow, and a dark pleated skirt.",
+  "kind": "character",
+  "license": "allows commercial use with credit (Petdex commercial filter: CC0, CC BY or CC BY-SA)",
+  "spritesheetPath": "https://assets.petdex.dev/pets/momo-c24b8a0b8c43/sprite.webp",
+  "submittedBy": { "name": "salma s." },
+  "dexNumber": 4899,
+  "pageUrl": "https://petdex.dev/pets/momo-4",
+  "fetchedAt": "2026-10-21",
+  "sha256": "ff7eaed558edc0fd877c7bd40a8b32d973c8f93df1859e4e2f158ae54adb276e"
+}

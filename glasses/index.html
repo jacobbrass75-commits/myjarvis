@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jarvis Glasses</title>
+    <style>
+      body { font: 14px -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0b0d0c; color: #cfe8d8; }
+      h3 { margin: 0 0 6px; }
+      code { color: #7cf2a5; }
+      .meta { color: #8b9690; font-size: 13px; margin: 0 0 14px; }
+      #emu { display: none; margin: 10px 0 16px; }
+      body.emulated #emu { display: block; }
+      #log { white-space: pre-wrap; font: 12px ui-monospace, monospace; opacity: .6; max-height: 30vh; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <h3>Jarvis</h3>
+    <p class="meta">Hub <code id="hub">…</code> · <span id="conn">connecting</span> · ring: tap = approve/open, double = deny/back, swipe = scroll, hold = talk</p>
+    <div id="emu"></div>
+    <div id="log"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

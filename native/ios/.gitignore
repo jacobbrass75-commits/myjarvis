@@ -1,0 +1,6 @@
+G2Kit/.build/
+G2Kit/.swiftpm/
+JarvisApp/build/
+*.xcuserstate
+xcuserdata/
+build/
