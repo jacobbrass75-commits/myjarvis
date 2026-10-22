@@ -3,23 +3,29 @@ import type { WxLayer } from "../../shared/protocol.js";
 import { Raster } from "../../shared/raster.js";
 import {
   at, CITIES, contour, extrema, hourIndex, lattice, levels, polyLength, project, sampleCubic, sampleLinear, unproject, windUV,
-  WX_H, WX_W, type Extremum, type Lattice, type WxGrid, type XY,
+  DETAIL, FAST, type Extremum, type Lattice, type View, type WxGrid, type XY,
 } from "./grid.js";
 import { REGIONS } from "./outline.js";
 import type { Radar } from "./radar.js";
 
-// The weather map, "Weather Channel" style in Lagonda green: the whole 576x288 lens (four 288x144
-// tiles), California a little right of centre, ocean on the left. Four layers:
+// The weather map, "Weather Channel" style in Lagonda green, in two views: "detail", the whole 576x288
+// lens (four 288x144 tiles), California a little right of centre, the ocean on the left holding the
+// readouts drawn in; and "fast", just the state in 288x288 (two tiles), the readouts left to text.
+// Six layers:
+//   sky       clouds as dim texture (dots = low/mid deck, strokes = high cirrus) with rain on top:
+//             the model's hourly precipitation, and RainViewer radar at "now"
 //   pressure  isobars every 4 hPa (2 when the field is flat), labelled; H and L centres; streamlines
 //             of the 10 m wind, with particle frames the glasses cycle to animate the airflow
 //   temp      2 m temperature as dithered levels on a dot lattice, isotherms every 10 degrees
 //   precip    radar (RainViewer, "now" only) or the model's hourly precipitation, dithered
+//   clouds    the cloud textures brighter, total-cover contours at 50% (solid) and 90% (dashed)
 //   wind      10 m wind speed as dithered levels, arrows on a grid
-// Readouts set into the corners: WX CALIFORNIA + layer + valid time (top left), model run + forecast
-// step ladder (top right), legend (bottom left), California's extreme for the layer (bottom right).
+// Detail readouts set into the corners: WX CALIFORNIA + layer + valid time (top left), model run +
+// forecast step ladder (top right), legend (bottom left), California's extreme for the layer (bottom right).
 // Outlines, not fills; under 15% of each tile lit (the shading thins out until it fits).
 
-export const WX_LAYERS: WxLayer[] = ["pressure", "temp", "precip", "wind"];
+/** Swipe order on the glasses; "sky" (clouds dim, rain bright on top) is the default. */
+export const WX_LAYERS: WxLayer[] = ["sky", "pressure", "temp", "precip", "clouds", "wind"];
 /** Forecast steps, hours ahead. */
 export const WX_STEPS = [0, 6, 12, 24];
 
@@ -39,7 +45,9 @@ export const PANELS = {
   legend: { x: 6, y: 206, w: 170, h: 78 },
   stat: { x: 446, y: 206, w: 124, h: 78 },
 } satisfies Record<string, Rect>;
-const PANEL_LIST: Rect[] = Object.values(PANELS);
+/** The view being drawn (renderWx is synchronous) and its panels: none on the fast map, text boxes do that job. */
+let V: View = DETAIL;
+let PANEL_LIST: Rect[] = Object.values(PANELS);
 const hits = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const inPanel = (x: number, y: number, pad = 0) => PANEL_LIST.some((p) => x >= p.x - pad && x < p.x + p.w + pad && y >= p.y - pad && y < p.y + p.h + pad);
 
@@ -58,6 +66,20 @@ export interface WxRenderOpts {
   /** Live radar for the precip layer at step 0. */
   radar?: Radar | null;
   hour12?: boolean;
+  /** "detail" (default): the whole lens with readouts drawn in; "fast": a 288x288 map only (FAST), readouts go to text. */
+  view?: "fast" | "detail";
+}
+
+/** California's extremes for the layer, and what the readouts need (the fast layout shows them as text). */
+export interface WxInfo {
+  lo: number;
+  hi: number;
+  source: "MODEL" | "RADAR";
+  /** Isobar spacing (hPa) on the pressure layer. */
+  interval?: number;
+  tempUnit: "F" | "C";
+  /** sky, clouds: California's average total cloud cover (%). */
+  cloud?: number;
 }
 
 export interface WxRender {
@@ -70,6 +92,9 @@ export interface WxRender {
   source: "MODEL" | "RADAR";
   isobars: number[];
   extrema: Extremum[];
+  info: WxInfo;
+  /** Tile indices (row by row, 288x144 each) in the order to push them: California's first, then the fuller ones. */
+  order: number[];
 }
 
 // ---------------- fields ----------------
@@ -82,6 +107,10 @@ interface Fields {
   vx: Lattice;
   vy: Lattice;
   pr: Lattice;
+  /** Cloud cover, %: total, low/mid deck (the larger), high. */
+  c: Lattice;
+  lm: Lattice;
+  hc: Lattice;
 }
 
 function fields(g: WxGrid, h: number): Fields {
@@ -90,12 +119,15 @@ function fields(g: WxGrid, h: number): Fields {
   const u = new Float32Array(g.nx * g.ny), n = new Float32Array(g.nx * g.ny);
   for (let k = 0; k < u.length; k++) [u[k], n[k]] = windUV(v.ws[h][k], v.wd[h][k]);
   return {
-    p: lattice((la, lo) => sampleCubic(v.p[h], g, la, lo)),
-    t: lattice((la, lo) => sampleCubic(v.t[h], g, la, lo)),
-    ws: lattice((la, lo) => Math.max(0, sampleLinear(v.ws[h], g, la, lo))),
-    vx: lattice((la, lo) => sampleLinear(u, g, la, lo)),
-    vy: lattice((la, lo) => -sampleLinear(n, g, la, lo)),
-    pr: lattice((la, lo) => Math.max(0, sampleLinear(v.pr[h], g, la, lo))),
+    p: lattice((la, lo) => sampleCubic(v.p[h], g, la, lo), 4, V),
+    t: lattice((la, lo) => sampleCubic(v.t[h], g, la, lo), 4, V),
+    ws: lattice((la, lo) => Math.max(0, sampleLinear(v.ws[h], g, la, lo)), 4, V),
+    vx: lattice((la, lo) => sampleLinear(u, g, la, lo), 4, V),
+    vy: lattice((la, lo) => -sampleLinear(n, g, la, lo), 4, V),
+    c: lattice((la, lo) => sampleLinear(v.c[h], g, la, lo), 4, V),
+    lm: lattice((la, lo) => Math.max(sampleLinear(v.cl[h], g, la, lo), sampleLinear(v.cm[h], g, la, lo)), 4, V),
+    hc: lattice((la, lo) => sampleLinear(v.ch[h], g, la, lo), 4, V),
+    pr: lattice((la, lo) => Math.max(0, sampleLinear(v.pr[h], g, la, lo)), 4, V),
   };
 }
 
@@ -108,8 +140,8 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((x) => 
  * mapped onto LV.shadeLo..shadeHi with an ordered dither between neighbouring levels.
  */
 function shade(r: Raster, ramp: (x: number, y: number) => number, sp: number, lo: number = LV.shadeLo, hi: number = LV.shadeHi) {
-  for (let row = 0, y = 1; y < WX_H; row++, y += sp)
-    for (let col = 0, x = 1 + (row & 1 ? sp >> 1 : 0); x < WX_W; col++, x += sp) {
+  for (let row = 0, y = 1; y < V.h; row++, y += sp)
+    for (let col = 0, x = 1 + (row & 1 ? sp >> 1 : 0); x < V.w; col++, x += sp) {
       if (inPanel(x, y, 2)) continue;
       const f = ramp(x, y);
       if (!(f >= 0)) continue;
@@ -132,14 +164,14 @@ function panel(r: Raster, p: Rect, notch?: string, level: number = LV.frame) {
 }
 
 function lensFrame(r: Raster) {
-  const c = 8, x1 = WX_W - 1, y1 = WX_H - 1;
+  const c = 8, x1 = V.w - 1, y1 = V.h - 1;
   r.polyline([[c, 0], [x1 - c, 0], [x1, c], [x1, y1 - c], [x1 - c, y1], [c, y1], [0, y1 - c], [0, c], [c, 0]], LV.frame);
 }
 
 function outlines(r: Raster) {
   const ring = (flat: number[]) => {
     const pts: XY[] = [];
-    for (let i = 0; i < flat.length; i += 2) pts.push(project(flat[i + 1], flat[i]));
+    for (let i = 0; i < flat.length; i += 2) pts.push(project(flat[i + 1], flat[i], V));
     return pts;
   };
   for (const reg of REGIONS) if (reg.id !== "CA") for (const rg of reg.rings) r.polyline(ring(rg), LV.border);
@@ -185,7 +217,7 @@ function contourLabels(r: Raster, lines: { level: number; pts: XY[] }[], text: (
       if (n >= (l.len > 360 ? 2 : 1)) break;
       const [cx, cy] = along(l.pts, l.len * f);
       const rect = { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h };
-      if (rect.x < 6 || rect.y < 6 || rect.x + w > WX_W - 6 || rect.y + h > WX_H - 6) continue;
+      if (rect.x < 6 || rect.y < 6 || rect.x + w > V.w - 6 || rect.y + h > V.h - 6) continue;
       if (PANEL_LIST.some((p) => hits(p, rect)) || taken.some((t) => hits(t, rect))) continue;
       taken.push({ x: rect.x - 20, y: rect.y - 8, w: rect.w + 40, h: rect.h + 16 }); // keep labels apart
       placed.push({ rect, s, level: l.level });
@@ -207,7 +239,7 @@ function contourLabels(r: Raster, lines: { level: number; pts: XY[] }[], text: (
 export function streamlines(vx: Lattice, vy: Lattice, o?: { seed?: number; sep?: number; maxLen?: number }): XY[][] {
   const sep = o?.sep ?? 14, dtest = sep * 0.55, maxLen = o?.maxLen ?? 170, step = 2;
   const cell = sep;
-  const cw = Math.ceil(WX_W / cell), ch = Math.ceil(WX_H / cell);
+  const cw = Math.ceil(V.w / cell), ch = Math.ceil(V.h / cell);
   const grid: XY[][] = Array.from({ length: cw * ch }, () => []);
   const near = (x: number, y: number, d: number, own?: Set<number>) => {
     const ci = Math.floor(x / cell), cj = Math.floor(y / cell);
@@ -233,7 +265,7 @@ export function streamlines(vx: Lattice, vy: Lattice, o?: { seed?: number; sep?:
       const d2 = dir(mx, my);
       if (!d2) break;
       const nx = x + sign * d2[0] * step, ny = y + sign * d2[1] * step;
-      if (nx < 3 || ny < 3 || nx > WX_W - 3 || ny > WX_H - 3 || inPanel(nx, ny, 3) || near(nx, ny, dtest)) break;
+      if (nx < 3 || ny < 3 || nx > V.w - 3 || ny > V.h - 3 || inPanel(nx, ny, 3) || near(nx, ny, dtest)) break;
       // no tight loops back onto itself
       if (pts.length > 8 && pts.slice(0, -6).some(([px, py]) => (px - nx) ** 2 + (py - ny) ** 2 < dtest * dtest)) break;
       pts.push([nx, ny]);
@@ -246,8 +278,8 @@ export function streamlines(vx: Lattice, vy: Lattice, o?: { seed?: number; sep?:
   let h = o?.seed ?? 1;
   const rnd = () => ((h = (h * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
   const lines: XY[][] = [];
-  for (let sy = 12; sy < WX_H; sy += 24)
-    for (let sx = 12; sx < WX_W; sx += 24) {
+  for (let sy = 12; sy < V.h; sy += 24)
+    for (let sx = 12; sx < V.w; sx += 24) {
       const x = sx + (rnd() - 0.5) * 14, y = sy + (rnd() - 0.5) * 14;
       if (inPanel(x, y, 4) || near(x, y, sep) || !dir(x, y)) continue;
       const back = trace(x, y, -1).reverse();
@@ -303,7 +335,7 @@ export function fmtValid(ms: number, hour12 = HOUR12): { hm: string; ampm?: stri
   return hour12 ? { hm: `${h % 12 || 12}:${m}`, ampm: h < 12 ? "AM" : "PM", day: DAYS[d.getDay()] } : { hm: `${String(h).padStart(2, "0")}:${m}`, day: DAYS[d.getDay()] };
 }
 
-const LAYER_NAME: Record<WxLayer, string> = { pressure: "PRESSURE", temp: "TEMPERATURE", precip: "PRECIP", wind: "WIND SPEED" };
+const LAYER_NAME: Record<WxLayer, string> = { sky: "SKY", pressure: "PRESSURE", temp: "TEMPERATURE", precip: "RAIN", clouds: "CLOUDS", wind: "WIND SPEED" };
 
 function readouts(r: Raster, o: WxRenderOpts, valid: number, g: WxGrid, f: Fields, source: "MODEL" | "RADAR") {
   // title: WX CALIFORNIA, layer, valid time and step
@@ -348,6 +380,21 @@ function readouts(r: Raster, o: WxRenderOpts, valid: number, g: WxGrid, f: Field
     r.line(lx + 110, ly + 30, lx + 140, ly + 24, LV.stream + 2);
     arrowHead(r, [lx + 140, ly + 24], [lx + 130, ly + 26], 4, LV.stream + 4);
     label(r, lx + 110, ly + 36, "WIND", { scale: 1, level: LV.text });
+  } else if (o.layer === "sky" || o.layer === "clouds") {
+    // a dot patch, a cirrus stroke, then a rain patch (sky) or the 50% line (clouds)
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 2; j++) r.set(lx + 1 + i * 3, ly + 1 + j * 3, o.layer === "sky" ? 4 : 8);
+    label(r, lx + 16, ly, "LOW+MID", { scale: 1, level: LV.text });
+    r.line(lx + 76, ly + 6, lx + 80, ly + 2, o.layer === "sky" ? 3 : 7);
+    r.line(lx + 82, ly + 6, lx + 86, ly + 2, o.layer === "sky" ? 3 : 7);
+    label(r, lx + 92, ly, "HIGH", { scale: 1, level: LV.text });
+    if (o.layer === "sky") {
+      for (let i = 0; i < 6; i++) for (let j = 0; j < 3; j++) r.set(lx + 1 + i * 2, ly + 15 + j * 2, 13);
+      label(r, lx + 16, ly + 16, source === "RADAR" ? "RAIN RADAR+GFS" : "RAIN GFS", { scale: 1, level: LV.text });
+    } else {
+      r.line(lx, ly + 19, lx + 12, ly + 19, LV.iso);
+      label(r, lx + 16, ly + 16, "50% COVER", { scale: 1, level: LV.text });
+    }
+    if (source === "RADAR") label(r, lx, ly + 30, "RADAR RAINVIEWER", { scale: 1, level: LV.text });
   } else {
     const [lo, hi, unit] = o.layer === "temp" ? (tu === "C" ? ["0", "38", "C"] : ["30", "100", "F"]) : o.layer === "wind" ? ["0", "40", "MPH"] : ["", "", source === "RADAR" ? "RADAR" : "MM/H"];
     // ramp: eight boxes, darkest to brightest
@@ -366,23 +413,15 @@ function readouts(r: Raster, o: WxRenderOpts, valid: number, g: WxGrid, f: Field
 
   // stat: California's extreme for the layer
   const S = PANELS.stat;
-  let lo = Infinity, hi = -Infinity;
-  const lat: Lattice = o.layer === "pressure" ? f.p : o.layer === "temp" ? f.t : o.layer === "wind" ? f.ws : f.pr;
-  for (let j = 0; j < lat.h; j++)
-    for (let i = 0; i < lat.w; i++) {
-      const { lat: la, lon } = unproject(i * lat.step, j * lat.step);
-      if (!inCalifornia(la, lon)) continue;
-      const x2 = lat.v[j * lat.w + i];
-      lo = Math.min(lo, x2);
-      hi = Math.max(hi, x2);
-    }
-  if (!Number.isFinite(lo)) lo = hi = 0;
+  const { lo, hi } = caRange(o.layer, f);
   const statRows: [string, string][] =
     o.layer === "pressure" ? [["LO", String(Math.round(lo))], ["HI", String(Math.round(hi))]]
     : o.layer === "temp" ? [["HI", String(Math.round(hi))], ["LO", String(Math.round(lo))]]
     : o.layer === "wind" ? [["MAX", String(Math.round(hi))]]
+    : o.layer === "clouds" ? [["AVG %", String(Math.round(caCloud(f)))], ["MIN %", String(Math.round(lo))]]
+    : o.layer === "sky" ? [["CLD %", String(Math.round(caCloud(f)))], ["MM/H", hi.toFixed(1)]]
     : [["MAX", hi.toFixed(1)]];
-  panel(r, S, o.layer === "pressure" ? "CA HPA" : o.layer === "temp" ? `CA ${tu}` : o.layer === "wind" ? "CA MPH" : source === "RADAR" ? "GFS MM/H" : "CA MM/H");
+  panel(r, S, o.layer === "pressure" ? "CA HPA" : o.layer === "temp" ? `CA ${tu}` : o.layer === "wind" ? "CA MPH" : o.layer === "clouds" ? "CLOUD" : o.layer === "sky" ? "CA SKY" : source === "RADAR" ? "GFS MM/H" : "CA MM/H");
   statRows.forEach(([k, val], i) => {
     const y = S.y + 22 + i * 28;
     label(r, S.x + 10, y + 6, k, { scale: 1, level: LV.text });
@@ -391,17 +430,91 @@ function readouts(r: Raster, o: WxRenderOpts, valid: number, g: WxGrid, f: Field
   });
 }
 
+/** Lowest and highest value of the layer's field over California. */
+function caRange(layer: WxLayer, f: Fields): { lo: number; hi: number } {
+  let lo = Infinity, hi = -Infinity;
+  const lat: Lattice = layer === "pressure" ? f.p : layer === "temp" ? f.t : layer === "wind" ? f.ws : layer === "clouds" ? f.c : f.pr;
+  for (let j = 0; j < lat.h; j++)
+    for (let i = 0; i < lat.w; i++) {
+      const { lat: la, lon } = unproject(i * lat.step, j * lat.step, V);
+      if (!inCalifornia(la, lon)) continue;
+      const x = lat.v[j * lat.w + i];
+      lo = Math.min(lo, x);
+      hi = Math.max(hi, x);
+    }
+  return Number.isFinite(lo) ? { lo, hi } : { lo: 0, hi: 0 };
+}
+
+/** California's average total cloud cover, %. */
+function caCloud(f: Fields): number {
+  let s = 0, n = 0;
+  for (let j = 0; j < f.c.h; j++)
+    for (let i = 0; i < f.c.w; i++) {
+      const { lat, lon } = unproject(i * f.c.step, j * f.c.step, V);
+      if (inCalifornia(lat, lon)) (s += f.c.v[j * f.c.w + i]), n++;
+    }
+  return n ? s / n : 0;
+}
+
+/**
+ * Cloud textures: the low/mid deck as a dot lattice (brighter = thicker), high cloud as short
+ * diagonal strokes on a 12 px grid (cirrus). `dim` keeps them under the rain on the sky layer.
+ */
+function cloudTexture(r: Raster, f: Fields, sp: number, dim: boolean) {
+  shade(r, (x, y) => {
+    const c = at(f.lm, x, y);
+    return c < 15 ? -1 : (c - 15) / 85;
+  }, sp, 2, dim ? 3 : 9);
+  for (let row = 0, y = 6; y < V.h; row++, y += 12)
+    for (let x = 6 + (row & 1 ? 6 : 0); x < V.w; x += 12) {
+      const c = at(f.hc, x, y);
+      if (c < 30 || inPanel(x, y, 4)) continue;
+      r.line(x - 2, y + 2, x + 2, y - 2, dim ? 2 : 3 + Math.round((c / 100) * 4));
+    }
+}
+
+/** Share of each tile (288x144, row by row) that is California, per view; fixed, so worked out once. */
+const caShare = new Map<View, number[]>();
+function caTiles(): number[] {
+  let share = caShare.get(V);
+  if (!share) {
+    share = [];
+    for (let ty = 0; ty < V.h; ty += 144)
+      for (let tx = 0; tx < V.w; tx += 288) {
+        let n = 0, k = 0;
+        for (let y = ty + 2; y < ty + 144; y += 4)
+          for (let x = tx + 2; x < tx + 288; x += 4, k++) {
+            const { lat, lon } = unproject(x, y, V);
+            if (inCalifornia(lat, lon)) n++;
+          }
+        share.push(n / k);
+      }
+    caShare.set(V, share);
+  }
+  return share;
+}
+
+/** Push order: the tiles with the most California first (what you look at), then by how much is lit. */
+function tileOrder(img: Raster): number[] {
+  const share = caTiles();
+  const score = share.map((s, i) => {
+    const tx = (i % (V.w / 288)) * 288, ty = Math.floor(i / (V.w / 288)) * 144;
+    return Math.round(s * 20) * 10 + img.crop(tx, ty, 288, 144).lit();
+  });
+  return score.map((_, i) => i).sort((a, b) => score[b] - score[a]);
+}
+
 // ---------------- the map ----------------
 
 /** City dots with tiny labels (plus the city's own reading on temp and wind), and your position. */
 function cities(r: Raster, o: WxRenderOpts, g: WxGrid, h: number, f: Fields, taken: Rect[]) {
   let me: XY | null = null;
   if (o.pos) {
-    const [x, y] = project(o.pos.lat, o.pos.lon).map(Math.round) as XY;
-    if (x > 8 && y > 8 && x < WX_W - 8 && y < WX_H - 8 && !inPanel(x, y)) me = [x, y];
+    const [x, y] = project(o.pos.lat, o.pos.lon, V).map(Math.round) as XY;
+    if (x > 8 && y > 8 && x < V.w - 8 && y < V.h - 8 && !inPanel(x, y)) me = [x, y];
   }
   for (const c of CITIES) {
-    const [x, y] = project(c.lat, c.lon).map(Math.round) as XY;
+    const [x, y] = project(c.lat, c.lon, V).map(Math.round) as XY;
     const site = g.sites.find((s) => s.lat === c.lat && s.lon === c.lon);
     const reading = (v: "t" | "ws", l: Lattice) => {
       const own = site?.v[v][h];
@@ -438,7 +551,7 @@ function hilo(r: Raster, ex: Extremum[], taken: Rect[]) {
     for (const dy of [0, -10, 10, -20, 20]) {
       const y = e.y + dy;
       const rect = { x: e.x - 12, y: y - 15, w: 26, h: 38 };
-      if (rect.x < 4 || rect.x + rect.w > WX_W - 4 || rect.y < 4 || rect.y + rect.h > WX_H - 4 || PANEL_LIST.some((p) => hits(p, rect)) || taken.some((t) => hits(t, rect))) continue;
+      if (rect.x < 4 || rect.x + rect.w > V.w - 4 || rect.y < 4 || rect.y + rect.h > V.h - 4 || PANEL_LIST.some((p) => hits(p, rect)) || taken.some((t) => hits(t, rect))) continue;
       r.fillRect(rect.x, rect.y, rect.w, rect.h, 0);
       digits(r, e.x - 7, y - 13, e.kind, "M", { level: LV.value });
       const s = String(Math.round(e.value));
@@ -458,18 +571,21 @@ export function isobarInterval(p: Lattice): number {
 
 /** Draw one layer at one forecast step. */
 export function renderWx(g: WxGrid, o: WxRenderOpts): WxRender {
+  const fast = o.view === "fast";
+  V = fast ? FAST : DETAIL;
+  PANEL_LIST = fast ? [] : Object.values(PANELS);
   const h = hourIndex(g, o.now + o.step * 3_600_000);
   const valid = g.times[h];
   const f = fields(g, h);
-  const radar = o.layer === "precip" && o.step === 0 ? o.radar ?? null : null;
+  const radar = (o.layer === "precip" || o.layer === "sky") && o.step === 0 ? o.radar ?? null : null;
   const source = radar ? "RADAR" : "MODEL";
   const tempLo = g.tempUnit === "C" ? -1 : 30, tempSpan = g.tempUnit === "C" ? 39 : 70;
 
   const lines = o.layer === "pressure" ? streamlines(f.vx, f.vy) : [];
   let isobars: number[] = [], ex: Extremum[] = [];
-  let img = new Raster(WX_W, WX_H);
+  let img = new Raster(V.w, V.h);
   for (let dim = 0; dim <= 3; dim++) {
-    img = new Raster(WX_W, WX_H);
+    img = new Raster(V.w, V.h);
     const sp = 3 + dim;
     const taken: Rect[] = [];
     if (o.layer === "temp") shade(img, (x, y) => (at(f.t, x, y) - tempLo) / tempSpan, sp);
@@ -477,13 +593,28 @@ export function renderWx(g: WxGrid, o: WxRenderOpts): WxRender {
     else if (o.layer === "precip")
       shade(img, (x, y) => {
         if (radar) {
-          const { lat, lon } = unproject(x, y);
+          const { lat, lon } = unproject(x, y, V);
           const v = radar.sample(lat, lon);
           return v > 0 ? v : -1;
         }
         const p = at(f.pr, x, y);
         return p < 0.05 ? -1 : (Math.log10(p) + 1.3) / 2;
       }, Math.max(2, sp - 1), 3, 12);
+    else if (o.layer === "clouds") cloudTexture(img, f, sp, false);
+    else if (o.layer === "sky") {
+      cloudTexture(img, f, sp + 1, true);
+      // rain on top, bright: radar (now) or the model, whichever shows more
+      shade(img, (x, y) => {
+        const p = at(f.pr, x, y);
+        let v = p < 0.05 ? -1 : (Math.log10(p) + 1.3) / 2;
+        if (radar) {
+          const { lat, lon } = unproject(x, y, V);
+          const rv = radar.sample(lat, lon);
+          if (rv > 0) v = Math.max(v, rv);
+        }
+        return v;
+      }, Math.max(2, sp - 1), 8, 14);
+    }
 
     if (o.layer === "pressure")
       for (const l of lines) {
@@ -491,8 +622,8 @@ export function renderWx(g: WxGrid, o: WxRenderOpts): WxRender {
         if (l.length > 6) arrowHead(img, l[l.length - 1], l[l.length - 4], 4, LV.stream + 2);
       }
     if (o.layer === "wind")
-      for (let y = 18; y < WX_H; y += 30)
-        for (let x = 18 + ((y / 30) & 1 ? 15 : 0); x < WX_W; x += 30) {
+      for (let y = 18; y < V.h; y += 30)
+        for (let x = 18 + ((y / 30) & 1 ? 15 : 0); x < V.w; x += 30) {
           if (inPanel(x, y, 12)) continue;
           const u = at(f.vx, x, y), v = at(f.vy, x, y), s = Math.hypot(u, v);
           if (s < 2) continue;
@@ -517,12 +648,24 @@ export function renderWx(g: WxGrid, o: WxRenderOpts): WxRender {
       cities(img, o, g, h, f, taken);
       if (o.layer === "pressure") hilo(img, ex, taken);
       contourLabels(img, cl, (lv) => String(Math.round(lv)), taken);
+    } else if (o.layer === "clouds" || o.layer === "sky") {
+      // cloud edges (clouds only; sky stays quiet under the rain): 50% total cover solid, 90% dashed, labelled
+      const cl = o.layer === "clouds" ? [50, 90].flatMap((lv) => contour(f.c, lv).map((pts) => ({ level: lv, pts }))) : [];
+      for (const c of cl) img.polyline(c.pts, LV.iso, 1, c.level === 90 ? [3, 3] : undefined);
+      cities(img, o, g, h, f, taken);
+      contourLabels(img, cl, (lv) => `${lv}%`, taken);
     } else cities(img, o, g, h, f, taken);
 
-    readouts(img, o, valid, g, f, source);
+    if (!fast) readouts(img, o, valid, g, f, source);
     lensFrame(img);
-    const lit = Math.max(img.crop(0, 0, 288, 144).lit(), img.crop(288, 0, 288, 144).lit(), img.crop(0, 144, 288, 144).lit(), img.crop(288, 144, 288, 144).lit());
+    let lit = 0;
+    for (let ty = 0; ty < V.h; ty += 144) for (let tx = 0; tx < V.w; tx += 288) lit = Math.max(lit, img.crop(tx, ty, 288, 144).lit());
     if (lit <= LIT_BUDGET - 0.01) break; // room for the particles
   }
-  return { img, frames: o.layer === "pressure" ? particleFrames(lines) : [], valid, source, isobars, extrema: ex };
+  const info: WxInfo = {
+    ...caRange(o.layer, f), source, tempUnit: g.tempUnit,
+    ...(o.layer === "pressure" ? { interval: isobarInterval(f.p) } : {}),
+    ...(o.layer === "sky" || o.layer === "clouds" ? { cloud: Math.round(caCloud(f)) } : {}),
+  };
+  return { img, frames: o.layer === "pressure" ? particleFrames(lines) : [], valid, source, isobars, extrema: ex, info, order: tileOrder(img) };
 }

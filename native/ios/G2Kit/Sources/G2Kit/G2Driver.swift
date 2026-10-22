@@ -97,12 +97,16 @@ public struct ImageStats: Equatable {
     public var stallTimeouts = 0
     /// How the last attempt was sent: "flow+w2" (flow control, 2 fragments in flight), "flow", "gap6".
     public var mode = ""
+    /// Payload format of the last attempt (ImageFormats.swift) and its size on the wire.
+    public var format = ImageFormat.standard
+    public var payloadBytes = 0
 
     public var summary: String {
         var s = "\(fragments) frags \(packets) pkts, queue \(queueMs)ms, ack avg \(ackAvgMs) max \(ackMaxMs)ms"
         if stalls > 0 { s += ", stalls \(stalls)/\(stallMs)ms" }
         if stallTimeouts > 0 { s += " (\(stallTimeouts) timed out)" }
         s += ", \(mode)"
+        if format != .standard { s += String(format: ", %@ %.1fKB", format.rawValue, Double(payloadBytes) / 1000) }
         if attempts > 1 { s += ", \(attempts) attempts" }
         return s
     }
@@ -199,6 +203,8 @@ public final class G2Driver {
     /// Image pacing for this session; a failed image steps it down (window, then flow control).
     private var imageWindowNow: Int
     private var imageFlowNow: Bool
+    /// Experimental image formats the glasses NAKed or timed out on: standard BMP instead, this session.
+    public private(set) var rejectedFormats: Set<ImageFormat> = []
     private let rx = Reassembler()
     private let dedupe = AudioDeduper()
     private var tails: [Side: Task<Void, Never>] = [:]
@@ -468,7 +474,13 @@ public final class G2Driver {
     /// image is retried with a fresh session id on failure/timeout; a failure also steps this session
     /// down to the MentraOS behaviour (window 1, then the fixed gap). Returns false if all attempts
     /// failed. Timing lands in `lastImage`.
-    public func setImage(_ containerId: Int, bmp: [UInt8], containerName: String? = nil) async throws -> Bool {
+    ///
+    /// `format` (opt-in, default standard) re-encodes the BMP as an experimental payload. If the
+    /// glasses NAK or time out on it, the format is rejected for the session and the image goes again
+    /// as a standard BMP; `force` (the LENS TEST page) skips both, so the push reports the format's own result.
+    public func setImage(_ containerId: Int, bmp: [UInt8], containerName: String? = nil,
+                         format: ImageFormat = .standard, force: Bool = false) async throws -> Bool {
+        var fmt = force || !rejectedFormats.contains(format) ? format : .standard
         let started = Date()
         let fragments = (bmp.count + Display.imageFragmentBytes - 1) / Display.imageFragmentBytes
         var stats = ImageStats(containerId: containerId, bytes: bmp.count, fragments: fragments)
@@ -482,7 +494,16 @@ public final class G2Driver {
         for attempt in 1...max(1, opt.imageAttempts) {
             imageSession = (imageSession + 1) % 256
             let session = imageSession
-            let msgs = EvenHub.imageMessages(containerId: containerId, bmp: bmp, sessionId: session, containerName: containerName)
+            var built = EvenHub.imageMessages(containerId: containerId, bmp: bmp, sessionId: session, containerName: containerName, format: fmt)
+            if built == nil {
+                log("image: \(fmt.rawValue) needs a plain 4-bit BMP; sending it as standard")
+                fmt = .standard
+                built = (EvenHub.imageMessages(containerId: containerId, bmp: bmp, sessionId: session, containerName: containerName), bmp.count)
+            }
+            let msgs = built!.messages
+            stats.format = fmt
+            stats.payloadBytes = built!.bytes
+            stats.fragments = msgs.count
             let window = min(imageWindowNow, msgs.count)
             let pacing: Pacing = imageFlowNow ? .flow : .gap
             stats.attempts = attempt
@@ -526,7 +547,12 @@ public final class G2Driver {
                 return true
             }
             log("image \(containerId) fragment \(failed.index) \(failed.timedOut ? "timed out" : "failed") (attempt \(attempt), \(stats.mode))")
-            if window > 1 {
+            if fmt != .standard {
+                rejectedFormats.insert(fmt)
+                if force { return false }
+                log("image: \(fmt.rawValue) rejected by the glasses; standard BMP from now on (this session)")
+                fmt = .standard
+            } else if window > 1 {
                 imageWindowNow = 1
                 log("image: one fragment in flight from now on (this session)")
             } else if imageFlowNow {
@@ -537,8 +563,9 @@ public final class G2Driver {
         return false
     }
 
-    public func setImage(_ containerId: Int, image: GrayImage, containerName: String? = nil) async throws -> Bool {
-        try await setImage(containerId, bmp: build4BitBmp(image), containerName: containerName)
+    public func setImage(_ containerId: Int, image: GrayImage, containerName: String? = nil,
+                         format: ImageFormat = .standard, force: Bool = false) async throws -> Bool {
+        try await setImage(containerId, bmp: build4BitBmp(image), containerName: containerName, format: format, force: force)
     }
 
     /// audioControl. The mic only runs while one of our pages is up, and dies with the page.

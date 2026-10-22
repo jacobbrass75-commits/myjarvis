@@ -1,4 +1,5 @@
 import Foundation
+import G2Kit
 import os
 import Security
 
@@ -23,6 +24,10 @@ final class AppSettings: ObservableObject {
     /// Image packets with flow control and 2 fragments in flight (DriverOptions.imageFlowControl /
     /// imageWindow). Off = MentraOS pacing: 6 ms between packets, one fragment per ACK.
     @Published var fastImages: Bool { didSet { d.set(fastImages, forKey: "fastImages") } }
+    /// Image payload (G2Kit ImageFormat raw value). Anything but "standard" is an experiment; the driver
+    /// falls back to standard for the session if the glasses refuse it. `-imageFormat lz4` as a launch
+    /// argument overrides it for that launch. Applies to the next image.
+    @Published var imageFormat: String { didSet { d.set(imageFormat, forKey: "imageFormat") } }
 
     init() {
         hubURL = d.string(forKey: "hubURL") ?? "http://192.168.1.2:8787"
@@ -39,6 +44,7 @@ final class AppSettings: ObservableObject {
         autoConnect = d.object(forKey: "autoConnect") as? Bool ?? true
         sessionInit = d.object(forKey: "sessionInit") as? Bool ?? true
         fastImages = d.object(forKey: "fastImages") as? Bool ?? true
+        imageFormat = d.string(forKey: "imageFormat").flatMap { ImageFormat(rawValue: $0)?.rawValue } ?? ImageFormat.standard.rawValue
         // Persist a launch-argument URL for ordinary app launches.
         d.set(hubURL, forKey: "hubURL")
     }

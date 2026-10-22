@@ -33,10 +33,19 @@ export function cannedOpenMeteo(g: GridSpec = GRID, hours = 26): unknown[] {
       const d = Math.hypot((p.lon - LOW.lon - h * 0.25 - 3) * 0.8, p.lat - LOW.lat - 1);
       return Math.max(0, 4 * Math.exp(-(d * d) / 3) - 0.3);
     };
+    // clouds: a deck round the low and its front (low/mid), a cirrus band to the north (high)
+    const deck = (h: number) => {
+      const d = Math.hypot((p.lon - LOW.lon - h * 0.25 - 1.5) * 0.8, p.lat - LOW.lat - 0.5);
+      return Math.min(100, Math.max(0, 115 * Math.exp(-(d * d) / 14) - 5));
+    };
+    const cirrus = () => Math.min(100, Math.max(0, 90 * Math.exp(-((p.lat - 40.5) ** 2) / 2) - 10));
     return {
       latitude: p.lat + 0.01, longitude: p.lon - 0.01, generationtime_ms: 0.1, utc_offset_seconds: 0, timezone: "GMT", timezone_abbreviation: "GMT", elevation: 0,
       ...(i ? { location_id: i } : {}),
-      hourly_units: { time: "unixtime", pressure_msl: "hPa", temperature_2m: "°F", wind_speed_10m: "mp/h", wind_direction_10m: "°", precipitation: "mm" },
+      hourly_units: {
+        time: "unixtime", pressure_msl: "hPa", temperature_2m: "°F", wind_speed_10m: "mp/h", wind_direction_10m: "°", precipitation: "mm",
+        cloud_cover: "%", cloud_cover_low: "%", cloud_cover_mid: "%", cloud_cover_high: "%",
+      },
       hourly: {
         time,
         pressure_msl: series((h) => pressureAt(p.lat, p.lon, h)),
@@ -44,6 +53,10 @@ export function cannedOpenMeteo(g: GridSpec = GRID, hours = 26): unknown[] {
         wind_speed_10m: series((h) => wind(h).speed),
         wind_direction_10m: series((h) => wind(h).from, 0),
         precipitation: series(rain, 2),
+        cloud_cover: series((h) => Math.max(deck(h), cirrus()), 0),
+        cloud_cover_low: series((h) => deck(h) * 0.7, 0),
+        cloud_cover_mid: series(deck, 0),
+        cloud_cover_high: series(cirrus, 0),
       },
     };
   });

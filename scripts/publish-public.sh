@@ -61,9 +61,20 @@ cfg = json.load(open(sys.argv[1]))
 secrets = []
 try:
     for line in open(sys.argv[2]):
-        m = re.match(r"^([A-Z_]+)=(.*)$", line.strip())
-        if m and len(m.group(2)) >= 12 and not m.group(2).startswith("openrouter:"):
-            secrets.append(m.group(2).strip("\"'"))
+        m = re.match(r"^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.*)$", line)
+        if not m:
+            continue
+        v = m.group(2).strip()
+        if v[:1] in "\"'":
+            v = v[1:].split(v[0], 1)[0]  # quoted value
+        else:
+            v = v.split(" #", 1)[0].strip()  # inline comment
+        # Anything secret-length; skip booleans, small numbers and plain config words.
+        # Plain URLs aren't secrets (private hosts are in the forbid list); ones with a user:pass@ or a
+        # key/token in the query are.
+        plain_url = re.fullmatch(r"https?://[^\s@?]+", v) is not None
+        if len(v) >= 8 and not plain_url and not re.fullmatch(r"[a-z]+(:[a-z0-9/._-]+)?|\d+(\.\d+)?|true|false", v):
+            secrets.append(v)
 except FileNotFoundError:
     pass
 bad = []

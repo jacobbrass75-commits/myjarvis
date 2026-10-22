@@ -29,7 +29,7 @@ Ring / temple: **swipe** = move, **tap** = select, **double tap** = back, **hold
 | **Today** | Time, weather, rest of today's calendar, agents, headlines | swipe: headlines |
 | **Copilot** | Listens to the conversation. Every few sentences: topic, where it's heading, and up to 3 cards: CHECK (myth or mistake just said), TERM, FACT (web-searched), ASK (question to keep it going), SAY, NEXT | swipe: pick card · tap: more · hold: "help me now" |
 | **Translate** | Pick their language; they're shown in yours, you're shown in theirs | swipe: history · double: change language |
-| **Navigate** | Turn-by-turn: arrow, distance, street, "then…", ETA. Opens itself when you ask for directions | tap: stop |
+| **Navigate** | Turn-by-turn: arrow, distance, street, "then…", ETA. Opens itself when you ask for directions | tap: map / full map / simple view · swipe: zoom · double tap: back, then END ROUTE? |
 | **Agents** | Your Claude agents on all devices; approval cards pop up anywhere | tap: open · hold while open: talk to that agent |
 | **Notes** | Hold to dictate a note; conversation summaries land here too | hold: record |
 | **Teleprompter** | Script from the phone page; "follow me" scrolls as you speak | tap: follow me |

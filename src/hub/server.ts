@@ -15,6 +15,7 @@ import { type Clip, captionThrottle, startClip, stopSpeech, warmUpSpeech } from 
 import { googleApi, googleRoute, watchMeetings } from "./google/index.js";
 import { startMessages } from "./messages/index.js";
 import { weather } from "./weather/service.js";
+import { sky } from "./sky/service.js";
 import { WorkerRegistry, handlePair, helloAuth, workersApi } from "./workers.js";
 
 const PORT = Number(process.env.HUB_PORT || 8787);
@@ -40,6 +41,7 @@ const messages = startMessages(hub);
 // Before a Google Calendar meeting, the copilot knows who's in it.
 watchMeetings((text) => (jarvis.copilot.context = text));
 weather.start(() => jarvis.nav.pos); // the weather map opens without waiting on Open-Meteo
+sky.start(); // ISS orbital elements (CelesTrak), kept 12 h
 
 const tokenOk = (t: unknown) => {
   if (!TOKEN) return true;
@@ -255,6 +257,9 @@ wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
         break;
       case "wx_get":
         void weather.handle((msg) => send(ws, msg), m.layer, m.step, jarvis.nav.pos, m.view);
+        break;
+      case "sky_get":
+        void sky.handle((msg) => send(ws, msg), m.view === "tonight" ? "tonight" : "now", Number(m.step) || 0, jarvis.nav.pos);
         break;
       case "nav_view":
         jarvis.nav.setView(m.view);

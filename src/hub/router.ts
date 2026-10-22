@@ -16,6 +16,7 @@ import { google } from "./google/index.js";
 import { glassesConfirm } from "./google/confirm.js";
 import { googleTools } from "./google/tools.js";
 import { messageTools } from "./messages/tools.js";
+import { skyTools } from "./sky/tools.js";
 
 // The voice router: each utterance is one turn of a Claude Code session (via the Agent SDK),
 // so it runs on your Claude Code login rather than an API key. Its only tools are the hub's
@@ -294,6 +295,8 @@ function hubServer(hub: Hub) {
     ),
     // Texts / iMessages through the Mac's Messages app (messages/tools.ts); sending waits for a tap.
     ...messageTools(hub),
+    // Night sky: star chart, "where's Jupiter", ISS passes (sky/tools.ts).
+    ...skyTools(hub),
     // Google Calendar + Gmail (google/tools.ts); writes wait for a tap on the glasses.
     ...googleTools(google, glassesConfirm(hub)),
     // apps.json actions. Their params are free-form here; the JSON Schema rides in the description.

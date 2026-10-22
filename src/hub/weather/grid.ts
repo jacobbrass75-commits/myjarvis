@@ -6,28 +6,39 @@
 
 export const WX_W = 576;
 export const WX_H = 288;
-/** North and south edges of the lens, degrees. */
+/** North and south edges of the map, degrees (both views). */
 export const LAT_N = 42.6;
 export const LAT_S = 32.0;
-/** Longitude at the middle of the lens: California sits a little right of centre, the ocean on the left holds the readouts. */
-export const LON_C = -121.0;
 /** Pixels per degree of latitude. */
 export const PPD = WX_H / (LAT_N - LAT_S);
 /** Equirectangular, true to scale at 37.3 N (the middle of the state). */
 const COS = Math.cos((37.3 * Math.PI) / 180);
 
+/** A map's size and the longitude at its middle. */
+export interface View {
+  w: number;
+  h: number;
+  lonC: number;
+}
+/** The full lens: California a little right of centre, the ocean on the left holds the readouts. */
+export const DETAIL: View = { w: WX_W, h: WX_H, lonC: -121.0 };
+/** The fast layout's 288x288 map (two tiles): just the state, centred. */
+export const FAST: View = { w: 288, h: 288, lonC: -119.27 };
+/** Longitude at the middle of the full-lens map. */
+export const LON_C = DETAIL.lonC;
+
 export type XY = [number, number];
 
-/** Lens pixel for a position (x right, y down). */
-export function project(lat: number, lon: number): XY {
-  return [WX_W / 2 + (lon - LON_C) * PPD * COS, (LAT_N - lat) * PPD];
+/** Map pixel for a position (x right, y down). */
+export function project(lat: number, lon: number, v: View = DETAIL): XY {
+  return [v.w / 2 + (lon - v.lonC) * PPD * COS, (LAT_N - lat) * PPD];
 }
 
-export function unproject(x: number, y: number): { lat: number; lon: number } {
-  return { lat: LAT_N - y / PPD, lon: LON_C + (x - WX_W / 2) / (PPD * COS) };
+export function unproject(x: number, y: number, v: View = DETAIL): { lat: number; lon: number } {
+  return { lat: LAT_N - y / PPD, lon: v.lonC + (x - v.w / 2) / (PPD * COS) };
 }
 
-/** West and east edges of the lens. */
+/** West and east edges of the full-lens map (the fast map lies inside them). */
 export const LON_W = unproject(0, 0).lon;
 export const LON_E = unproject(WX_W, 0).lon;
 
@@ -69,7 +80,8 @@ export function requestPoints(g: GridSpec = GRID, sites: { lat: number; lon: num
   return [...gridPoints(g), ...sites.map((c) => ({ lat: c.lat, lon: c.lon }))];
 }
 
-export type WxVar = "p" | "t" | "ws" | "wd" | "pr";
+/** pressure, temperature, wind speed/direction, precipitation, cloud cover total/low/mid/high (%). */
+export type WxVar = "p" | "t" | "ws" | "wd" | "pr" | "c" | "cl" | "cm" | "ch";
 
 /** Hourly fields on the grid: vars[v][hour][j * nx + i]. */
 export interface WxGrid extends GridSpec {
@@ -82,7 +94,11 @@ export interface WxGrid extends GridSpec {
   tempUnit: "F" | "C";
 }
 
-const OM_VARS: Record<WxVar, string> = { p: "pressure_msl", t: "temperature_2m", ws: "wind_speed_10m", wd: "wind_direction_10m", pr: "precipitation" };
+// 9 variables: Open-Meteo counts a request with more than 10 as several calls.
+const OM_VARS: Record<WxVar, string> = {
+  p: "pressure_msl", t: "temperature_2m", ws: "wind_speed_10m", wd: "wind_direction_10m", pr: "precipitation",
+  c: "cloud_cover", cl: "cloud_cover_low", cm: "cloud_cover_mid", ch: "cloud_cover_high",
+};
 export const OM_HOURLY = Object.values(OM_VARS).join(",");
 
 /** The forecast request for every grid point (GFS, so the run time can be shown; wind in mph). */
@@ -183,12 +199,12 @@ export interface Lattice {
   v: Float32Array;
 }
 
-export function lattice(fn: (lat: number, lon: number) => number, step = 4): Lattice {
-  const w = Math.floor(WX_W / step) + 1, h = Math.floor(WX_H / step) + 1;
+export function lattice(fn: (lat: number, lon: number) => number, step = 4, view: View = DETAIL): Lattice {
+  const w = Math.floor(view.w / step) + 1, h = Math.floor(view.h / step) + 1;
   const v = new Float32Array(w * h);
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
-      const { lat, lon } = unproject(i * step, j * step);
+      const { lat, lon } = unproject(i * step, j * step, view);
       v[j * w + i] = fn(lat, lon);
     }
   return { w, h, step, v };

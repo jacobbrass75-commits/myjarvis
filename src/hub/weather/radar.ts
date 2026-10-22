@@ -34,27 +34,36 @@ export interface Radar {
 }
 
 export class RainViewer {
-  private cache: { at: number; radar: Radar } | null = null;
+  /** The last answer, also when RainViewer had no frame (radar null), so that isn't asked again for 10 minutes. */
+  private cache: { at: number; radar: Radar | null } | null = null;
   private inflight: Promise<Radar | null> | null = null;
 
   constructor(private fetcher: typeof fetch = (...a) => fetch(...a), private headers: Record<string, string> = {}, private now = () => Date.now()) {}
 
-  /** The newest radar frame, cached for 10 minutes; null when RainViewer can't be reached. Never throws. */
+  /**
+   * The newest radar frame, cached for 10 minutes; null when RainViewer can't be reached. Never throws.
+   * Past 10 minutes the cached frame comes back at once and a fresh one loads behind it (the map never
+   * waits on RainViewer once it has a frame).
+   */
   async get(): Promise<Radar | null> {
     if (this.cache && this.now() - this.cache.at < TTL) return this.cache.radar;
+    const first = !this.cache;
     this.inflight ??= this.load()
       .catch((e) => {
         console.log(`[weather] radar: ${e?.message ?? e}`);
         return this.cache?.radar ?? null;
       })
       .finally(() => (this.inflight = null));
-    return this.inflight;
+    return first ? this.inflight : this.cache!.radar;
   }
 
   private async load(): Promise<Radar | null> {
     const idx: any = await (await this.fetcher(INDEX, { headers: this.headers, signal: AbortSignal.timeout(8000) })).json();
     const frame = idx?.radar?.past?.at?.(-1);
-    if (!frame?.path || typeof idx.host !== "string") return null;
+    if (!frame?.path || typeof idx.host !== "string") {
+      this.cache = { at: this.now(), radar: null };
+      return null;
+    }
     const tiles = new Map<string, Gray>();
     await Promise.all(
       radarTiles().map(async ([x, y]) => {

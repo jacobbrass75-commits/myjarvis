@@ -53,7 +53,7 @@ Approval cards pop up over everything except conversations, so you can approve a
 - What you say in English shows as Chinese characters + pinyin, so you can read it out loud.
 - Doubles as a Mandarin tutor: leave it on while watching a show or ordering food.
 
-**Getting somewhere:** hold, *"walk me to the nearest coffee shop"*. *Navigate* opens with an arrow, distance, street and ETA. Tap stops it.
+**Getting somewhere:** hold, *"walk me to the nearest coffee shop"*. *Navigate* opens with an arrow, distance, street and ETA. Tap cycles map + readout / full-screen map / simple view, swipe zooms, and double tap asks END ROUTE? (or say "stop navigation").
 
 **Talks and videos:** paste a script on the phone page → *Teleprompter*; tap "follow me" and it scrolls as you speak.
 

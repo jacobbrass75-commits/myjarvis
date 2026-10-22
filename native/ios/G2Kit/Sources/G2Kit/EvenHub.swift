@@ -183,10 +183,11 @@ public enum EvenHub {
         return hubMessage(cmd: HubCmd.updateTextData, subField: HubField.textUpgrade, sub: sub, magic: magic)
     }
 
-    public static func imageFragment(containerId: Int, containerName: String?, sessionId: Int, totalSize: Int, index: Int, data: [UInt8]) -> [UInt8] {
+    public static func imageFragment(containerId: Int, containerName: String?, sessionId: Int, totalSize: Int, index: Int, data: [UInt8],
+                                     compressMode: Int = 0) -> [UInt8] {
         let w = PbWriter().int(1, containerId)
         if let containerName { w.string(2, containerName) }
-        w.int(3, sessionId).int(4, totalSize).int(5, 0).int(6, index).int(7, data.count).bytes(8, data)
+        w.int(3, sessionId).int(4, totalSize).int(5, compressMode).int(6, index).int(7, data.count).bytes(8, data)
         return hubMessage(cmd: HubCmd.updateImageRawData, subField: HubField.imageRawData, sub: w.finish())
     }
 
@@ -196,6 +197,29 @@ public enum EvenHub {
             imageFragment(containerId: containerId, containerName: containerName, sessionId: sessionId, totalSize: bmp.count,
                           index: i, data: Array(bmp[off..<min(off + Display.imageFragmentBytes, bmp.count)]))
         }
+    }
+
+    /// The same messages for an experimental payload (ImageFormats.swift), or nil when `bmp` is not the
+    /// plain 4-bit BMP the format is made from. `.standard` is exactly `imageMessages(...)` above.
+    public static func imageMessages(containerId: Int, bmp: [UInt8], sessionId: Int, containerName: String? = nil,
+                                     format: ImageFormat) -> (messages: [[UInt8]], bytes: Int)? {
+        if format == .lz4Frag {
+            var total = 0
+            let msgs = stride(from: 0, to: bmp.count, by: Display.imageFragmentBytes).enumerated().map { i, off -> [UInt8] in
+                let packed = ImageEncoder.lz4Compress(Array(bmp[off..<min(off + Display.imageFragmentBytes, bmp.count)]))
+                total += packed.count
+                return imageFragment(containerId: containerId, containerName: containerName, sessionId: sessionId, totalSize: bmp.count,
+                                     index: i, data: packed, compressMode: format.compressMode)
+            }
+            return (msgs, total)
+        }
+        guard let payload = ImageEncoder.payload(bmp, format: format) else { return nil }
+        let msgs = stride(from: 0, to: payload.count, by: Display.imageFragmentBytes).enumerated().map { i, off in
+            imageFragment(containerId: containerId, containerName: containerName, sessionId: sessionId, totalSize: payload.count,
+                          index: i, data: Array(payload[off..<min(off + Display.imageFragmentBytes, payload.count)]),
+                          compressMode: format.compressMode)
+        }
+        return (msgs, payload.count)
     }
 
     public static func shutdownPage(exitMode: Int = 0) -> [UInt8] {

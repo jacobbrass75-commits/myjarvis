@@ -502,6 +502,69 @@ import Testing
         g2.close()
     }
 
+    /// Compress modes of the image fragments written to the right lens, per session id.
+    func imageModes(_ R: MockPeripheral) -> [Int: Set<Int>] {
+        var out: [Int: Set<Int>] = [:]
+        for (_, m) in sent(R) where m.int(1) == 3 {
+            let f = m.message(5)!
+            out[f.int(3)!, default: []].insert(f.int(5) ?? 0)
+        }
+        return out
+    }
+
+    @Test func experimentalFormatIsSentWhenAccepted() async throws {
+        let (L, R) = lenses()
+        let g2 = try await G2Driver.attach(left: L, right: R, options: fast)
+        _ = ackImages(R)
+        #expect(try await g2.setImage(5, image: tile, format: .lz4))
+        let st = try #require(g2.lastImage)
+        #expect(st.format == .lz4 && st.ok && st.fragments == 1 && st.payloadBytes < 1000)
+        #expect(st.summary.contains("lz4 0."))
+        #expect(imageModes(R) == [1: [2]])
+        g2.close()
+    }
+
+    @Test func rejectedExperimentalFormatFallsBackToStandardForTheSession() async throws {
+        let (L, R) = lenses()
+        var logs: [String] = []
+        var opts = fast
+        opts.log = { logs.append($0) }
+        let g2 = try await G2Driver.attach(left: L, right: R, options: opts)
+        var rle4Sessions: Set<Int> = []
+        let rx = Reassembler()
+        // NAK anything that is not a plain BMP (an RLE4 header has biCompression 2 at byte 30).
+        R.onWrite = { _, data in
+            guard let msg = rx.push(data), msg.service == 0xE0 else { return }
+            let m = PbMessage(msg.payload)
+            guard m.int(1) == 3, let f = m.message(5) else { return }
+            let session = f.int(3)!, index = f.int(6) ?? 0
+            let bytes = f.bytes(8) ?? []
+            if index == 0, bytes.count > 30, bytes[30] == 2 { rle4Sessions.insert(session) }
+            let code = rle4Sessions.contains(session) ? 5 : 4
+            let ack = PbWriter().int(1, 4).message(6, PbWriter().int(3, session).int(6, index).int(8, code)).finish()
+            Task { @MainActor in
+                await tick(1)
+                rxPackets(0xE0, ack).forEach { R.notify(G2UUID.notify, $0) }
+            }
+        }
+        #expect(try await g2.setImage(5, image: tile, format: .rle4))
+        var st = try #require(g2.lastImage)
+        #expect(st.ok && st.attempts == 2 && st.format == .standard && st.mode == "flow+w2") // pacing untouched
+        #expect(g2.rejectedFormats == [.rle4])
+        #expect(logs.contains { $0.contains("rle4 rejected by the glasses; standard BMP from now on") })
+        // The next push goes straight out as a standard BMP.
+        #expect(try await g2.setImage(5, image: tile, format: .rle4))
+        st = try #require(g2.lastImage)
+        #expect(st.attempts == 1 && st.format == .standard)
+        // Forced (LENS TEST): the format itself, its own result, no standard retry.
+        let before = rle4Sessions.count
+        #expect(try await g2.setImage(5, image: tile, format: .rle4, force: true) == false)
+        #expect(rle4Sessions.count == before + 1)
+        st = try #require(g2.lastImage)
+        #expect(st.attempts == 1 && st.format == .rle4 && !st.ok)
+        g2.close()
+    }
+
     @Test func inputFromRingAndTempleWithEchoDropped() async throws {
         let (L, R) = lenses()
         let g2 = try await G2Driver.attach(left: L, right: R, options: fast)

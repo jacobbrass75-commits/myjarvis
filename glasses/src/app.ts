@@ -12,6 +12,7 @@ import { notesMode } from "./modes/notes";
 import { teleprompter } from "./modes/teleprompter";
 import { translate, translateTo } from "./modes/translate";
 import { weather, weatherTo } from "./modes/weather";
+import { sky, skyTo } from "./modes/sky";
 import { captionOwns, captionReply, captionStop, onCaptionHub } from "./ui/caption";
 
 // Jarvis for Even G2: a launcher of modes on the glasses, all talking to your hub.
@@ -38,6 +39,7 @@ const router = {
       if (m.mode === "translate" && m.lang) translateTo(m.lang);
       if (m.mode === "apps" && m.app) openApp(m.app);
       if (m.mode === "weather" && m.wx) weatherTo(m.wx);
+      if (m.mode === "sky" && m.sky) skyTo(m.sky);
       openedByVoice = Date.now();
     }
     // Directions started by voice: jump to the Navigate screen.
@@ -63,7 +65,7 @@ const router = {
 };
 
 export async function startJarvis(bridge: EvenAppBridge, hubs: string[], token: string) {
-  for (const m of [captions, launcher, appsMode, dashboard, copilot, translate, navigate, weather, agents, notesMode, messagesMode, teleprompter, router]) core.modes.set(m.id, m);
+  for (const m of [captions, launcher, appsMode, dashboard, copilot, translate, navigate, weather, sky, agents, notesMode, messagesMode, teleprompter, router]) core.modes.set(m.id, m);
   core.stack.push(launcher);
   core.bridge = bridge;
   bridge.onEvenHubEvent(onBridgeEvent);

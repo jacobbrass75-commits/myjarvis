@@ -327,6 +327,56 @@ export interface WxMap {
   seq: number;
 }
 
+/**
+ * SKY (star tracker): computed on the hub (src/hub/sky) for your location. "now" is the all-sky chart
+ * (288x288, zenith centred, north up and east left as when looking up) plus the readouts as data;
+ * "tonight" is text only. Times are ms; the glasses format them.
+ */
+export type SkyView = "now" | "tonight";
+export interface SkyItem { name: string; dir: string; alt: number; mag: number; kind: "moon" | "planet" | "star" | "iss" }
+export interface SkyEvent { label: string; at: number }
+export interface SkyNow {
+  /** The instant drawn (now + step hours) and the step. */
+  at: number;
+  step: number;
+  /** base64 of pack4, 288x288. */
+  px: string;
+  phase: "day" | "civil" | "nautical" | "astro" | "dark";
+  /** Daytime: catalogue stars above the horizon that the Sun hides. */
+  hidden?: number;
+  /** The next Sun event (SET, DARK, DAWN, RISE). */
+  event?: SkyEvent;
+  moon: { pct: number; waxing: boolean; up: boolean; next?: SkyEvent };
+  /** Brightest things above the horizon, brightest first (at most 6). */
+  items: SkyItem[];
+  lat: number;
+  lon: number;
+  place?: string;
+  /** Ask again after this long (shorter while the ISS is up). */
+  refreshMs: number;
+  seq: number;
+}
+export interface SkyPlanetNight { name: string; mag: number; rise?: number; set?: number; up: boolean; high?: { at: number; alt: number } }
+export interface SkyPass { start: number; end: number; startDir: string; endDir: string; maxAlt: number; mag: number; visible: boolean }
+export interface SkyTonight {
+  from: number;
+  to: number;
+  sunset?: number;
+  dark?: number;
+  dawn?: number;
+  sunrise?: number;
+  moon: { pct: number; waxing: boolean; phase: string; rise?: number; set?: number };
+  planets: SkyPlanetNight[];
+  passes: SkyPass[];
+  /** Why there are no passes (no elements yet, too old). */
+  issNote?: string;
+  showers: { name: string; peak: string; zhr: number; atPeak: boolean }[];
+  lat: number;
+  lon: number;
+  place?: string;
+  seq: number;
+}
+
 export interface Dashboard {
   time: string;
   date: string;
@@ -391,6 +441,8 @@ export type ClientMsg =
   | { t: "nav_stop" }
   /** The weather map for a layer and forecast step (hours ahead); answered with wx_map. */
   | { t: "wx_get"; layer: WxLayer; step: number; view?: WxView }
+  /** SKY: the chart for now + step hours, or tonight's list; answered with `sky`. */
+  | { t: "sky_get"; view: SkyView; step?: number }
   // ---- Messages (src/hub/messages) ----
   | { t: "messages_get" }
   /** The glasses are showing this chat ("reply: on my way" goes to it); no chat = none. */
@@ -457,6 +509,7 @@ export type HubMsg =
   | { t: "nav"; nav: NavState | null }
   | { t: "nav_map"; map: NavMap | null }
   | { t: "wx_map"; map: WxMap | null; error?: string }
+  | { t: "sky"; now?: SkyNow; tonight?: SkyTonight; error?: string }
   | { t: "miniapps"; apps: MiniAppInfo[] }
   | { t: "studio"; job: StudioJob }
   | { t: "studio_models"; models: StudioModelOption[]; default: StudioModel }
@@ -466,7 +519,7 @@ export type HubMsg =
   /** One new message. popup false: the wearer is busy (Translate/Copilot/Teleprompter) or in do not disturb. */
   | { t: "message_new"; message: MessageItem; popup: boolean }
   /** Ask the glasses to open a mode (voice: "start translating Spanish"). */
-  | { t: "open"; mode: "dashboard" | "copilot" | "translate" | "navigate" | "agents" | "notes" | "teleprompter" | "launcher" | "apps" | "messages" | "weather"; lang?: string; app?: string; wx?: { layer?: WxLayer; step?: number; view?: WxView } }
+  | { t: "open"; mode: "dashboard" | "copilot" | "translate" | "navigate" | "agents" | "notes" | "teleprompter" | "launcher" | "apps" | "messages" | "weather" | "sky"; lang?: string; app?: string; wx?: { layer?: WxLayer; step?: number; view?: WxView }; sky?: { view?: SkyView; step?: number } }
   | { t: "listening"; purpose: ListenPurpose | null; engine?: string }
   // to device daemons
   | { t: "approval_result"; id: string; decision: Decision; message?: string }

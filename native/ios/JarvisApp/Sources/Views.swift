@@ -286,8 +286,11 @@ struct SettingsView: View {
                     Toggle("Send dashboard prelude", isOn: $settings.dashboardPrelude)
                     Toggle("Send session init (onboarding skip, gesture control)", isOn: $settings.sessionInit)
                     Toggle("Fast image transfer", isOn: $settings.fastImages)
+                    Picker("Image format", selection: $settings.imageFormat) {
+                        ForEach(ImageFormat.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                    }
                 } header: { Text("Protocol (takes effect on the next connect)") } footer: {
-                    Text("Only change these if pages never appear on the lenses. Session init is what the drivers that receive ring gestures send after connecting; leave it on unless it breaks the session. Fast image transfer sends image packets as fast as Bluetooth takes them with two fragments in flight; off is the MentraOS pacing (6 ms gaps, one fragment per ACK). See native/PROTOCOL.md, open questions.")
+                    Text("Only change these if pages never appear on the lenses. Session init is what the drivers that receive ring gestures send after connecting; leave it on unless it breaks the session. Fast image transfer sends image packets as fast as Bluetooth takes them with two fragments in flight; off is the MentraOS pacing (6 ms gaps, one fragment per ACK). Image format applies to the next image; the experimental ones fall back to standard for the session if the glasses refuse them, and Lens test page 4 shows each one on the lens. See native/PROTOCOL.md, open questions.")
                 }
             }
             .navigationTitle("Settings")

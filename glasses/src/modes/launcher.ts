@@ -15,6 +15,7 @@ const ITEMS: [id: string, label: string][] = [
   ["translate", "TRANSLATE"],
   ["navigate", "NAVIGATE"],
   ["weather", "WEATHER"],
+  ["sky", "SKY"],
   ["agents", "AGENTS"],
   ["messages", "MESSAGES"],
   ["notes", "NOTES"],

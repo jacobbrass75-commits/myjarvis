@@ -217,6 +217,15 @@ ISX's 7-packet handshake (capability query, pipe role, two time syncs with a "tr
   id. GK gotchas: the **first image after a CREATE may be silently dropped** (send a throwaway frame
   first); some ACKs never arrive even though the fragment landed; after an aborted transfer, bump the
   session id by 2. The SDK 0.0.12+ has a compressed path (`compressMode`); its format is unknown.
+  What is known about it (2026-10): SDK 0.0.16's `ImageRawDataUpdate.toJson` sets `compressMode: 2`, its
+  README says "Image raw data is compressed with LZ4 internally", and hub.evenrealities.com/docs/build/display
+  says "Raw data is LZ4-compressed in transit automatically (SDK 0.0.12+)" with a full-screen refresh of
+  ~800 ms. So **CompressMode 2 = LZ4**, done by the Even App before BLE. Not documented: block or frame
+  format, whole image or per fragment, and whether MapTotalSize is the compressed size. GK's
+  `ble/image.ts` sends uncompressed 4-bit BMPs, found 6144/8192-byte fragments rejected (async error 7)
+  and pipelines fragments (window 4). Nobody documents RLE or 1-bit BMPs on the G2 (the G1 took 1-bit
+  576x136 BMPs over a different command). G2Kit's opt-in experiments (ImageFormats.swift, Settings →
+  Image format, LENS TEST page 4) try LZ4 block (whole image / per fragment), BI_RLE4, BI_RLE8 and 1-bit.
 - Result codes (`EvenHub_ErrorCode_List`): 0 create ok, 1 invalid container, 2 oversize, 3 out of
   memory, 4/5 image ok/fail, 6/7 rebuild ok/fail, 8/9 text ok/fail (MOS treats 9 as "our page is
   gone"), 10/11 shutdown ok/fail, 12 heartbeat ok, 13/14 audio ok/fail. The responses arrive in

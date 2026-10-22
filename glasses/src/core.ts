@@ -42,6 +42,8 @@ export interface Tile {
   img: Raster;
   /** Push order when several changed, lower first (default: slot). */
   prio?: number;
+  /** LENS TEST only: force this payload format in the iPhone app (G2Kit ImageFormat, e.g. "rle4"). */
+  format?: string;
 }
 
 /** A firmware text box beside the main body/list (ids 8..11, names box0..box3). */
@@ -696,7 +698,15 @@ const samePx = (a: Uint8Array | undefined, b: Uint8Array) => {
  * the call throws (an older app); the Even App and the emulator keep the SDK's PNG path.
  */
 let nativeImages = true;
-async function sendImage(id: number, name: string, levels: Uint8Array, w: number, h: number): Promise<string> {
+/** Last push per container name: the result and how long the page waited for it (LENS TEST shows it). */
+export const imageResults = new Map<string, { result: string; ms: number; format?: string }>();
+async function sendImage(id: number, name: string, levels: Uint8Array, w: number, h: number, format?: string): Promise<string> {
+  const t0 = performance.now();
+  const r = await sendImageNow(id, name, levels, w, h, format);
+  imageResults.set(name, { result: r, ms: Math.round(performance.now() - t0), format });
+  return r;
+}
+async function sendImageNow(id: number, name: string, levels: Uint8Array, w: number, h: number, format?: string): Promise<string> {
   const g = globalThis as any;
   if (nativeImages && g.__jarvisImageHost && g.flutter_inappwebview) {
     const t = performance.now();
@@ -704,6 +714,7 @@ async function sendImage(id: number, name: string, levels: Uint8Array, w: number
     try {
       return String(await g.flutter_inappwebview.callHandler("jarvisImage", {
         containerID: id, containerName: name, bmp, sentAt: Date.now(), encodeMs: Math.round(performance.now() - t),
+        ...(format ? { format } : {}),
       }));
     } catch (e: any) {
       nativeImages = false;
@@ -722,6 +733,8 @@ async function pushTiles(tiles: Tile[]) {
   // breaks ties. Sorting by slot alone starved the others when tile 0 changed every frame (an animated
   // map: one ~1.7 s push each, so tiles 1-3 never reached the lens).
   const age = (t: Tile) => tileSentAt.get(TILE_ID + t.slot) ?? -1;
+  // A fresh image container is already black: an all-black tile needs no ~1.5 s push.
+  for (const t of tiles) if (!sentTiles.has(TILE_ID + t.slot) && t.img.px.every((v) => v === 0)) sentTiles.set(TILE_ID + t.slot, t.img.px.slice());
   const dirty = tiles
     .filter((t) => !samePx(sentTiles.get(TILE_ID + t.slot), t.img.px))
     .sort((p, q) => age(p) - age(q) || (p.prio ?? p.slot) - (q.prio ?? q.slot));
@@ -733,7 +746,7 @@ async function pushTiles(tiles: Tile[]) {
   if (!t) return;
   const id = TILE_ID + t.slot;
   const px = t.img.px.slice();
-  const r = await sendImage(id, `tile${t.slot}`, px, t.img.w, t.img.h);
+  const r = await sendImage(id, `tile${t.slot}`, px, t.img.w, t.img.h, t.format);
   if (r !== "success") {
     // Try again shortly, a few times, then treat it as sent so a bad tile can't loop forever.
     const n = (tileFailures.get(id) ?? 0) + 1;
@@ -748,7 +761,8 @@ async function pushTiles(tiles: Tile[]) {
     firstTile = false;
     resendTile = id;
   }
-  if (dirty.length > 1 || resendTile >= 0) render();
+  // A forced-format push (LENS TEST) redraws once so its result shows.
+  if (dirty.length > 1 || resendTile >= 0 || t.format) render();
 }
 
 // ---------------- pictures ----------------

@@ -246,10 +246,11 @@ final class EvenHubHost: NSObject, WKScriptMessageHandlerWithReply, WKScriptMess
         var t = ImageTiming(name: name ?? "image \(id)", width: box?.width, height: box?.height, bmpBytes: bmp.count, path: "sdk")
         t.inBytes = bytes.count
         t.decodeMs = ms(since: started)
-        return await sendImage(id, name: name, bmp: bmp, timing: t, started: started)
+        return await sendImage(id, name: name, bmp: bmp, timing: t, started: started, format: nil)
     }
 
-    /// glasses/src/core.ts sendImage: `{containerID, containerName, bmp: base64 BMP, sentAt: epoch ms, encodeMs}`.
+    /// glasses/src/core.ts sendImage: `{containerID, containerName, bmp: base64 BMP, sentAt: epoch ms, encodeMs, format?}`.
+    /// `format` (LENS TEST) forces that payload for this push, bypassing the session fallback.
     private func nativeImage(_ req: [String: Any], received: Date) async -> String {
         guard let id = SDKModels.int(req, "containerID"), let b64 = req["bmp"] as? String,
               let data = Data(base64Encoded: b64) else { return "imageException" }
@@ -262,10 +263,12 @@ final class EvenHubHost: NSObject, WKScriptMessageHandlerWithReply, WKScriptMess
             t.bridgeMs = max(0, Int(received.timeIntervalSince1970 * 1000 - sentAt))
         }
         t.decodeMs = ms(since: received)
-        return await sendImage(id, name: name, bmp: bmp, timing: t, started: received)
+        let forced = (req["format"] as? String).flatMap(ImageFormat.init(rawValue:))
+        return await sendImage(id, name: name, bmp: bmp, timing: t, started: received, format: forced)
     }
 
-    private func sendImage(_ id: Int, name: String?, bmp: [UInt8], timing: ImageTiming, started: Date) async -> String {
+    /// `format` nil = the Settings choice (with the session fallback); set = forced (LENS TEST).
+    private func sendImage(_ id: Int, name: String?, bmp: [UInt8], timing: ImageTiming, started: Date, format: ImageFormat?) async -> String {
         var t = timing
         guard let drv = glasses.driver else {
             t.result = "no glasses"
@@ -274,7 +277,8 @@ final class EvenHubHost: NSObject, WKScriptMessageHandlerWithReply, WKScriptMess
         }
         var result = "sendFailed"
         do {
-            result = try await drv.setImage(id, bmp: bmp, containerName: name) ? "success" : "sendFailed"
+            let chosen = format ?? ImageFormat(rawValue: settings.imageFormat) ?? .standard
+            result = try await drv.setImage(id, bmp: bmp, containerName: name, format: chosen, force: format != nil) ? "success" : "sendFailed"
         } catch {
             t.error = describeBleError(error)
         }
